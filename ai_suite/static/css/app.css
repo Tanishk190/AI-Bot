@@ -50,6 +50,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .app-shell {
   width: 100vw;
   height: 100vh;
@@ -374,6 +380,25 @@ button {
 
 .run-btn {
   padding: 9px 18px;
+}
+
+.status-line {
+  margin-top: 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.status-line[data-state="ready"] {
+  color: var(--color-text-info);
+}
+
+.status-line[data-state="success"] {
+  color: var(--green);
+}
+
+.status-line[data-state="error"] {
+  color: var(--red);
 }
 
 .result-box {
