@@ -1,0 +1,12 @@
+openai
+Flask
+langchain
+langchain-community
+chromadb
+sentence-transformers
+easyocr
+Pillow
+python-dotenv
+scikit-learn
+pypdf
+python-docx

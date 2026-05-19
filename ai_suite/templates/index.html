@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Suite</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  </head>
+  <body>
+    <main class="app-shell" aria-label="AI Suite">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title">AI Suite</div>
+          <div class="sidebar-sub">Knovos Internship</div>
+        </div>
+
+        <nav class="nav-list" aria-label="Tools">
+          {% for tool in tools %}
+            <button
+              class="nav-item{{ ' active' if loop.first else '' }}"
+              type="button"
+              data-panel="{{ tool.id }}"
+              data-title="{{ tool.page_title or tool.title }}"
+              data-badge="{{ tool.badge }}"
+            >
+              <span class="nav-icon" aria-hidden="true">{{ tool.icon }}</span>
+              <span>{{ tool.title }}</span>
+            </button>
+          {% endfor %}
+        </nav>
+      </aside>
+
+      <section class="main">
+        <header class="topbar">
+          <h1 id="page-title">AI Chat</h1>
+          <span class="badge" id="page-badge">RAG Enabled</span>
+        </header>
+
+        <div class="content">
+          <section class="panel active" id="panel-chat" aria-labelledby="chat-label">
+            <div class="split-layout">
+              <div>
+                <div class="section-label" id="chat-label">Knowledge Base</div>
+                <label class="upload-zone">
+                  <input type="file" name="documents" accept=".pdf,.txt,.docx" multiple>
+                  <span class="upload-icon">DOC</span>
+                  <strong>Drop documents here or click to upload</strong>
+                  <small>PDF, TXT, DOCX supported</small>
+                </label>
+                <button class="run-btn" type="button">Index documents</button>
+              </div>
+
+              <div>
+                <div class="section-label">Conversation</div>
+                <div class="chat-history">
+                  <div class="msg">
+                    <div class="avatar ai">AI</div>
+                    <div class="bubble ai">Hello! Upload documents and ask me anything about them. I will use retrieved context for grounded answers.</div>
+                  </div>
+                  <div class="msg user">
+                    <div class="avatar usr">T</div>
+                    <div class="bubble usr">What are the key clauses in the NDA document?</div>
+                  </div>
+                  <div class="msg">
+                    <div class="avatar ai">AI</div>
+                    <div class="bubble ai">The key clauses include confidentiality period, mutual non-disclosure obligations, permitted disclosures, and governing jurisdiction.</div>
+                  </div>
+                </div>
+                <form class="chat-input-row">
+                  <input type="text" placeholder="Ask about your documents..." aria-label="Ask about your documents">
+                  <button type="submit" aria-label="Send message">Send</button>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" id="panel-ocr" aria-labelledby="ocr-label">
+            <div class="section-label" id="ocr-label">Upload Image</div>
+            <label class="upload-zone">
+              <input type="file" name="images" accept=".png,.jpg,.jpeg" multiple>
+              <span class="upload-icon">IMG</span>
+              <strong>Drop an image here or click to upload</strong>
+              <small>PNG, JPG, JPEG supported</small>
+            </label>
+
+            <div class="section-label">Extracted Text</div>
+            <pre class="result-box">Invoice #INV-2024-0012
+Date: March 15, 2024
+Bill To: Acme Corp, 123 Main St
+
+Item: Legal Consultation - $2,500.00
+Item: Document Review - $1,200.00
+Total: $3,700.00</pre>
+
+            <div class="action-row">
+              <button type="button">Copy text</button>
+              <button type="button">Download ZIP</button>
+            </div>
+          </section>
+
+          <section class="panel" id="panel-pii" aria-labelledby="pii-label">
+            <div class="section-label" id="pii-label">Input Paragraph</div>
+            <textarea class="textarea-field" placeholder="Paste a paragraph to extract PII from...">John Smith, born on June 3 1990, lives at 42 Elm Street, New York. His email is john.smith@email.com and SSN is 123-45-6789.</textarea>
+            <button class="run-btn" type="button">Extract PII</button>
+
+            <div class="section-label with-space">JSON Output</div>
+            <pre class="json-box">{
+  <span class="json-key">"name"</span>: <span class="json-str">"John Smith"</span>,
+  <span class="json-key">"dob"</span>: <span class="json-str">"1990-06-03"</span>,
+  <span class="json-key">"address"</span>: <span class="json-str">"42 Elm Street, New York"</span>,
+  <span class="json-key">"email"</span>: <span class="json-str">"john.smith@email.com"</span>,
+  <span class="json-key">"ssn"</span>: <span class="json-str">"123-45-6789"</span>
+}</pre>
+            <div class="action-row">
+              <button type="button">Download JSON</button>
+            </div>
+          </section>
+
+          <section class="panel" id="panel-sentiment" aria-labelledby="sentiment-label">
+            <div class="section-label" id="sentiment-label">Input Text</div>
+            <textarea class="textarea-field" placeholder="Enter text for sentiment analysis...">The product exceeded all expectations. Delivery was fast and the quality is outstanding. Will definitely buy again!</textarea>
+            <button class="run-btn" type="button">Analyze</button>
+
+            <div class="sentiment-result">
+              <div class="sent-card">
+                <div class="sent-label">Sentiment</div>
+                <div class="sent-val pos">Positive</div>
+              </div>
+              <div class="sent-card">
+                <div class="sent-label">Confidence</div>
+                <div class="sent-val">94%</div>
+              </div>
+              <div class="sent-card">
+                <div class="sent-label">Tone</div>
+                <div class="sent-val small">Enthusiastic</div>
+              </div>
+            </div>
+
+            <div class="meter-wrap">
+              <div class="meter-label"><span>Positive</span><span>94%</span></div>
+              <div class="meter"><div class="meter-fill positive" style="width:94%"></div></div>
+            </div>
+            <div class="meter-wrap">
+              <div class="meter-label"><span>Neutral</span><span>4%</span></div>
+              <div class="meter"><div class="meter-fill neutral" style="width:4%"></div></div>
+            </div>
+            <div class="meter-wrap">
+              <div class="meter-label"><span>Negative</span><span>2%</span></div>
+              <div class="meter"><div class="meter-fill negative" style="width:2%"></div></div>
+            </div>
+          </section>
+
+          <section class="panel" id="panel-classify" aria-labelledby="classify-label">
+            <div class="section-label" id="classify-label">Relevance Criteria</div>
+            <div class="classifier-criteria">
+              <label for="criteria">User defined criteria</label>
+              <input id="criteria" type="text" value="Documents related to financial fraud or contract disputes">
+            </div>
+
+            <label class="upload-zone compact">
+              <input type="file" name="classifier_documents" accept=".pdf,.txt,.docx" multiple>
+              <span class="upload-icon">DOC</span>
+              <strong>Upload documents for classification</strong>
+              <small>Cosine similarity and LLM reasoning will run here.</small>
+            </label>
+
+            <div class="section-label">Documents</div>
+            <div class="doc-list">
+              <div class="doc-row"><span class="file-icon">FILE</span><span class="doc-name">NDA_Acme_2024.pdf</span><span class="doc-tag tag-rel">Relevant</span></div>
+              <div class="doc-row"><span class="file-icon">FILE</span><span class="doc-name">HR_Policy_v3.docx</span><span class="doc-tag tag-nrel">Not Relevant</span></div>
+              <div class="doc-row"><span class="file-icon">FILE</span><span class="doc-name">Invoice_March_2024.pdf</span><span class="doc-tag tag-rel">Relevant</span></div>
+              <div class="doc-row"><span class="file-icon">FILE</span><span class="doc-name">Meeting_Notes_Q1.txt</span><span class="doc-tag tag-proc">Processing</span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>
