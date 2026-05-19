@@ -34,28 +34,57 @@ def load_documents(uploaded_files: list) -> list[Chunk]:
 
 
 def chunk_text(text: str, source: str, chunk_size: int = 512, overlap: int = 100) -> list[Chunk]:
-    # Split by paragraphs first
+    """
+    Split text into overlapping chunks using multiple strategies.
+    First tries paragraph breaks, then sentence breaks, then character breaks.
+    """
+    if not text or not text.strip():
+        return []
+    
+    text = text.strip()
+    
+    # Try splitting by double newlines (paragraphs)
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    
+    # If only 1 "paragraph", try splitting by single newlines
+    if len(paragraphs) == 1:
+        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
+    
+    # If still not enough, try sentence breaks
+    if len(paragraphs) == 1:
+        import re
+        paragraphs = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
     
     chunks = []
     current = ""
     idx = 1
-
+    
     for para in paragraphs:
-        if len(current) + len(para) <= chunk_size:
+        # If single paragraph is too large, split it
+        if len(para) > chunk_size:
+            if current:
+                chunks.append(Chunk(source=source, index=idx, text=current.strip()))
+                idx += 1
+            # Split large paragraph into smaller pieces
+            for i in range(0, len(para), chunk_size - overlap):
+                chunk_text = para[i : i + chunk_size]
+                if chunk_text.strip():
+                    chunks.append(Chunk(source=source, index=idx, text=chunk_text.strip()))
+                    idx += 1
+            current = ""
+        elif len(current) + len(para) <= chunk_size:
             current += " " + para
         else:
             if current:
                 chunks.append(Chunk(source=source, index=idx, text=current.strip()))
                 idx += 1
-                # Keep overlap from end of last chunk
                 current = current[-overlap:] + " " + para
             else:
                 current = para
-
+    
     if current:
         chunks.append(Chunk(source=source, index=idx, text=current.strip()))
-
+    
     return chunks
 
 
