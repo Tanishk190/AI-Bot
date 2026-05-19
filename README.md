@@ -1,79 +1,83 @@
 # AI Suite 🤖
 > Knovos Internship Project | Tanishk | May 2026
 
-A multi-feature AI-powered document intelligence web app built in Python using Streamlit. Five distinct tools accessible via sidebar navigation, all powered by OpenAI GPT-4o with RAG where applicable.
+A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o**. Features RAG-powered Q&A, OCR, PII extraction, sentiment analysis, and document classification.
+
+**Status:** 🚀 AI Chat feature actively developed and working with semantic search RAG
 
 ---
 
 ## Features
 
-| # | Feature | Description |
-|---|---------|-------------|
-| 1 | 💬 **AI Chat** | RAG-powered Q&A over uploaded PDF, TXT, and DOCX files |
-| 2 | 🔍 **OCR** | Extract text from images (PNG, JPG, JPEG), downloadable as ZIP |
-| 3 | 🔐 **PII Extractor** | Detect names, emails, phone numbers, SSNs and export as JSON |
-| 4 | 📊 **Sentiment Analysis** | Returns sentiment, confidence %, tone, and GPT-4o reasoning |
-| 5 | 📁 **Document Classifier** | Classifies docs as Relevant / Not Relevant / Uncertain against user-defined criteria |
+| # | Feature | Status | Description |
+|---|---------|--------|-------------|
+| 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
+| 2 | 🔍 **OCR** | 📋 Planned | Extract text from images (PNG, JPG, JPEG) |
+| 3 | 🔐 **PII Extractor** | 📋 Planned | Detect sensitive info: names, emails, SSNs, etc. |
+| 4 | 📊 **Sentiment Analysis** | 📋 Planned | Sentiment, confidence, tone, reasoning |
+| 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
 
 ---
 
 ## Project Structure
 
 ```
-ai_suite/
-├── app.py                         # Main entry point + sidebar navigation
-├── pages/
-│   ├── 1_AI_Chat.py               # Feature 1: RAG-powered chat
-│   ├── 2_OCR.py                   # Feature 2: Image to text extraction
-│   ├── 3_PII_Extractor.py         # Feature 3: PII extraction to JSON
-│   ├── 4_Sentiment_Analysis.py    # Feature 4: Sentiment analysis
-│   └── 5_Document_Classifier.py   # Feature 5: Relevance classification
-├── core/
-│   ├── llm.py                     # OpenAI GPT-4o wrapper
-│   ├── rag.py                     # Embedding, ChromaDB storage, retrieval
-│   └── ocr.py                     # EasyOCR text extraction
-├── utils/
-│   └── helpers.py                 # parse_llm_json(), create_zip(), save_json()
-├── requirements.txt
-├── .env                           # API keys — never commit this
-└── .gitignore
+AI-Bot/
+├── ai_suite/
+│   ├── app.py                      # Flask main app
+│   ├── core/
+│   │   ├── llm.py                  # OpenAI GPT-4o wrapper
+│   │   └── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
+│   ├── static/
+│   │   ├── css/app.css             # Styling
+│   │   └── js/app.js               # Client-side logic
+│   ├── templates/
+│   │   └── index.html              # UI layout
+│   ├── requirements.txt            # Python dependencies
+│   ├── .env                        # API keys (not committed)
+│   └── .gitignore
+├── .gitignore                      # Root-level gitignore
+└── README.md
 ```
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
+| Component | Technology |
+|-----------|------------|
 | Language | Python 3.10+ |
-| Frontend/UI | Streamlit (multi-page app) |
+| Backend | Flask |
+| Frontend | HTML/CSS/JavaScript |
 | LLM | OpenAI API (GPT-4o) |
-| Embeddings | `sentence-transformers` (`all-MiniLM-L6-v2`) |
-| Vector Store | ChromaDB (in-memory) |
-| RAG Orchestration | LangChain + LangChain-Community |
-| OCR | EasyOCR |
-| Document Parsing | `pypdf`, `python-docx` |
-| Similarity | `scikit-learn` cosine similarity |
-| Env Management | `python-dotenv` |
-| Export | `zipfile`, `json` (stdlib) |
+| Retrieval | Semantic search (sentence-transformers all-MiniLM-L6-v2) |
+| Chunking | Multi-strategy (paragraph → line → sentence → character) |
+| Document Parsing | PyPDF2, python-docx |
+| Env Management | python-dotenv |
 
 ---
 
 ## Setup
 
-### 1. Clone the repo
+### 1. Clone and navigate
 
 ```bash
 git clone https://github.com/Tanishk190/AI-Bot.git
 cd AI-Bot/ai_suite
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Create conda environment (recommended)
 
 ```bash
+conda create -n ai-suite python=3.10
+conda activate ai-suite
+```
+
+Or use venv:
+```bash
 python -m venv venv
-source venv/bin/activate        # Mac/Linux
-venv\Scripts\activate           # Windows
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Mac/Linux
 ```
 
 ### 3. Install dependencies
@@ -82,100 +86,141 @@ venv\Scripts\activate           # Windows
 pip install -r requirements.txt
 ```
 
-> **Note:** EasyOCR downloads ~200MB of model weights on first run.
+First-time run will download the sentence-transformers model (~80MB) for semantic search.
 
-### 4. Add your API key
+### 4. Set up API key
 
-Create a `.env` file in `ai_suite/`:
+Create `.env` in `ai_suite/`:
 
 ```
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
+OPENAI_API_KEY=sk-your-key-here
 ```
 
-This file is in `.gitignore` — never commit it.
+This file is in `.gitignore` — **never commit it**.
 
-### 5. Run the app
+### 5. Run Flask
 
 ```bash
-streamlit run app.py
+python app.py   
+```
+
+Visit: **http://127.0.0.1:5000**
+
+---
+
+## How It Works
+
+### 💬 AI Chat (Currently Active)
+
+**User Flow:**
+1. Upload PDF, TXT, or DOCX files
+2. System extracts text and chunks using smart multi-strategy splitting
+3. Chunks are embedded using sentence-transformers
+4. User asks a question
+5. System finds semantically similar chunks (not just keyword matching)
+6. GPT-4o answers based only on retrieved context
+
+**Key Features:**
+- **Semantic Search:** Understands meaning, not just keywords ("author" ≈ "writer")
+- **Smart Chunking:** Paragraph → Line → Sentence → Character fallbacks
+- **Retrieval Quality:** Top-3 chunks with highest semantic similarity
+- **Context Window:** Only provides relevant context to GPT-4o
+
+**Example:**
+```
+Q: Who wrote this?
+✅ Found: "The author, John Smith, wrote..."
+✅ Found: "Written by Jane Doe in 2020..."
+✅ Answers accurately with semantic search
 ```
 
 ---
 
-## How Each Feature Works
+## Current Development
 
-### 💬 AI Chat
-Upload PDF/TXT/DOCX files → documents are chunked (size 500, overlap 50) and embedded into ChromaDB → ask a question → top-5 relevant chunks are retrieved → GPT-4o answers using only retrieved context. Chat history and vectorstore persist across reruns via `st.session_state`.
+**Recent Changes (May 19, 2026):**
+- ✅ Migrated from Hugging Face to OpenAI GPT-4o
+- ✅ Implemented semantic search RAG (sentence-transformers)
+- ✅ Multi-strategy document chunking
+- ✅ Flask web interface with real-time indexing
+- ✅ Clean error handling and fallbacks
+- ✅ Updated UI ("Searching Documents..." instead of old messages)
 
-### 🔍 OCR
-Upload PNG/JPG/JPEG images → EasyOCR extracts text from each → results displayed per image → all text files bundled into a downloadable ZIP.
-
-### 🔐 PII Extractor
-Paste text → GPT-4o identifies PII entities: `name`, `email`, `phone`, `dob`, `address`, `ssn`, `organization`, `other` → structured JSON displayed via `st.json()` → downloadable as `.json`.
-
-### 📊 Sentiment Analysis
-Input text → GPT-4o returns `sentiment` (Positive/Negative/Neutral), `confidence` (0–100), `tone` (single word), and `reasoning` (1–2 sentences) → displayed as metric cards with color-coded progress bars.
-
-### 📁 Document Classifier
-Define relevance criteria (e.g. "financial fraud or contract disputes") → upload documents → each doc is embedded → cosine similarity computed against criteria embedding → GPT-4o makes final call: **Relevant** / **Not Relevant** / **Uncertain** with reasoning → results shown in a color-coded table.
+**Git Branch:** `AI_chat`
 
 ---
 
-## Core Modules
+## Configuration
 
-### `core/llm.py`
-Thin OpenAI wrapper. All features call `get_completion(system_prompt, user_prompt)`. Client is lazily initialized once per session using the key from `.env`.
+### Environment Variables
 
-### `core/rag.py`
-Full RAG pipeline:
-- `load_documents(files)` — reads PDF/TXT/DOCX, splits into 500-token chunks
-- `embed_and_store(chunks)` — embeds and stores in in-memory ChromaDB
-- `retrieve(query, vectorstore, k=5)` — returns top-k relevant chunks
-- `embed_text(text)` — single string embedding (used by Document Classifier)
+```env
+OPENAI_API_KEY=sk-...  # Your OpenAI API key
+```
 
-### `core/ocr.py`
-EasyOCR wrapper with lazy model loading to avoid re-downloading on every Streamlit rerun:
-- `extract_text(image_file)` → plain string
-- `extract_text_with_confidence(image_file)` → bounding boxes + confidence scores (debug mode)
+### Chunking Settings (core/rag.py)
 
-### `utils/helpers.py`
-Shared utilities:
-- `parse_llm_json(response)` — strips markdown fences, safely parses JSON from GPT-4o responses
-- `create_zip(texts)` — bundles `{filename: text}` dict into a `BytesIO` ZIP
-- `save_json(data)` — serializes a dict to `BytesIO` for download
+```python
+chunk_size = 512       # Characters per chunk
+overlap = 100          # Overlap between chunks for context
+```
+
+### Retrieval Settings (core/rag.py)
+
+```python
+k = 3                  # Number of chunks to retrieve
+```
+
+---
+
+## Troubleshooting
+
+**"not found in documents"**
+- Ensure documents are indexed first (click "Index documents")
+- Semantic search may need more training data for very niche topics
+- Try simpler, more specific questions
+
+**Flask won't start**
+- Check `OPENAI_API_KEY` is set in `.env`
+- Verify all dependencies installed: `pip install -r requirements.txt`
+- On Windows, try: `python -m flask run`
+
+**Slow first load**
+- Sentence-transformers downloads model on first use (~80MB)
+- This only happens once - subsequent loads are cached
 
 ---
 
 ## Requirements
 
 ```
+Flask
 openai
-streamlit
-langchain
-langchain-community
-chromadb
-sentence-transformers
-easyocr
+python-docx
+pypdf
 Pillow
 python-dotenv
-scikit-learn
-pypdf
-python-docx
+PyPDF2
+sentence-transformers
+numpy
 ```
 
 ---
 
-## Key Design Decisions
+## Next Steps (TODO)
 
-- **API key via `.env` only** — never hardcoded anywhere in the codebase
-- **`parse_llm_json()` on all LLM responses** — GPT-4o sometimes wraps JSON in markdown fences; this strips them before parsing
-- **ChromaDB in-memory** — no disk persistence needed for demo/internship scope
-- **Lazy model loading** — EasyOCR and sentence-transformers initialized once and reused to avoid repeated downloads
-- **`st.session_state`** — persists vectorstore and chat history across Streamlit reruns
+- [ ] Build OCR feature (EasyOCR + image upload)
+- [ ] Build PII Extractor (pattern detection + GPT-4o)
+- [ ] Build Sentiment Analysis (GPT-4o analysis + UI cards)
+- [ ] Build Document Classifier (cosine similarity + relevance scoring)
+- [ ] Add database persistence (chat history + indexed documents)
+- [ ] Deploy to production (Heroku/Railway)
 
 ---
 
 ## Author
 
-**Tanishk** — B.Tech AI & Data Science, ADIT (CVM University)
-Built as part of internship at [Knovos](https://www.knovos.com) — AI-powered eDiscovery & legal technology.
+**Tanishk** — B.Tech AI & Data Science  
+Built as part of internship at [Knovos](https://www.knovos.com) — AI-powered eDiscovery & legal tech
+
+**GitHub:** https://github.com/Tanishk190/AI-Bot
