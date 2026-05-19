@@ -12,6 +12,37 @@ class Chunk:
     index: int
 
 
+# Lazy load embeddings only when needed
+_embeddings_model = None
+_embeddings_cache = {}
+
+def _get_embeddings_model():
+    """Lazy load sentence-transformers model."""
+    global _embeddings_model
+    if _embeddings_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _embeddings_model = SentenceTransformer('all-MiniLM-L6-v2')
+        except ImportError:
+            print("⚠️  sentence-transformers not installed. Using fallback BM25 retrieval.")
+            _embeddings_model = False
+    return _embeddings_model
+
+
+def _get_embedding(text: str):
+    """Get embedding for text with caching."""
+    if text in _embeddings_cache:
+        return _embeddings_cache[text]
+    
+    model = _get_embeddings_model()
+    if model is False:
+        return None
+    
+    embedding = model.encode(text, convert_to_tensor=False)
+    _embeddings_cache[text] = embedding
+    return embedding
+
+
 def load_documents(uploaded_files: list) -> list[Chunk]:
     """
     Load and parse documents from uploaded files.
@@ -92,12 +123,48 @@ def retrieve_relevant_chunks(
     question: str, chunks: list[Chunk], k: int = 3
 ) -> list[Chunk]:
     """
-    Simple BM25-style retrieval: return chunks with highest word overlap.
-    For production, use semantic search (sentence-transformers + ChromaDB).
+    Retrieve relevant chunks using semantic similarity (preferred) or BM25 fallback.
+    
+    Semantic search understands meaning, not just keywords.
+    Examples: "author" matches "writer", "expensive" matches "costly"
     """
     if not chunks:
         return []
     
+    # Try semantic search first
+    try:
+        model = _get_embeddings_model()
+        if model and model is not False:
+            import numpy as np
+            
+            question_embedding = _get_embedding(question)
+            if question_embedding is None:
+                raise ValueError("Could not embed question")
+            
+            scored = []
+            for chunk in chunks:
+                chunk_embedding = _get_embedding(chunk.text)
+                if chunk_embedding is None:
+                    continue
+                
+                # Cosine similarity
+                similarity = np.dot(question_embedding, chunk_embedding) / (
+                    np.linalg.norm(question_embedding) * np.linalg.norm(chunk_embedding)
+                )
+                scored.append((chunk, similarity))
+            
+            if scored:
+                scored.sort(key=lambda x: x[1], reverse=True)
+                return [chunk for chunk, _ in scored[:k]]
+    except Exception as e:
+        print(f"⚠️  Semantic search failed: {e}. Falling back to BM25.")
+    
+    # Fallback to BM25 (simple word matching)
+    return _bm25_retrieval(question, chunks, k)
+
+
+def _bm25_retrieval(question: str, chunks: list[Chunk], k: int) -> list[Chunk]:
+    """Fallback BM25-style retrieval: word overlap."""
     query_words = set(question.lower().split())
     scored = []
     
