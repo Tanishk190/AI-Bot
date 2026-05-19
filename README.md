@@ -1,4 +1,4 @@
-# AI Suite — Project Memory Document
+# DocuMind 
 > Knovos Internship Project | Tanishk | May 2026
 
 ---
