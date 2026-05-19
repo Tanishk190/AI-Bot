@@ -1,6 +1,7 @@
 .env
 __pycache__/
 *.py[cod]
+*.so
 .streamlit/secrets.toml
 .venv/
 venv/
@@ -9,3 +10,31 @@ chroma/
 instance/
 uploads/
 *.log
+
+# Conda environment
+conda-env/
+env_name/
+.conda/
+
+# Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*~

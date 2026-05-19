@@ -41,33 +41,26 @@
             <div class="split-layout">
               <div>
                 <div class="section-label" id="chat-label">Knowledge Base</div>
-                <label class="upload-zone">
-                  <input type="file" name="documents" accept=".pdf,.txt,.docx" multiple>
+                <label class="upload-zone" id="chat-upload-zone">
+                  <input id="chat-documents" type="file" name="documents" accept=".pdf,.txt,.docx" multiple>
                   <span class="upload-icon">DOC</span>
                   <strong>Drop documents here or click to upload</strong>
                   <small>PDF, TXT, DOCX supported</small>
                 </label>
-                <button class="run-btn" type="button">Index documents</button>
+                <button class="run-btn" id="chat-index-btn" type="button">Index documents</button>
+                <div class="status-line" id="chat-index-status">No documents indexed yet.</div>
               </div>
 
               <div>
                 <div class="section-label">Conversation</div>
-                <div class="chat-history">
+                <div class="chat-history" id="chat-history">
                   <div class="msg">
                     <div class="avatar ai">AI</div>
-                    <div class="bubble ai">Hello! Upload documents and ask me anything about them. I will use retrieved context for grounded answers.</div>
-                  </div>
-                  <div class="msg user">
-                    <div class="avatar usr">T</div>
-                    <div class="bubble usr">What are the key clauses in the NDA document?</div>
-                  </div>
-                  <div class="msg">
-                    <div class="avatar ai">AI</div>
-                    <div class="bubble ai">The key clauses include confidentiality period, mutual non-disclosure obligations, permitted disclosures, and governing jurisdiction.</div>
+                    <div class="bubble ai">Hello! Upload documents, index them, and ask me anything about them. I will answer using OpenAI GPT-4o with retrieved context.</div>
                   </div>
                 </div>
-                <form class="chat-input-row">
-                  <input type="text" placeholder="Ask about your documents..." aria-label="Ask about your documents">
+                <form class="chat-input-row" id="chat-form">
+                  <input id="chat-input" type="text" placeholder="Ask about your documents..." aria-label="Ask about your documents">
                   <button type="submit" aria-label="Send message">Send</button>
                 </form>
               </div>
