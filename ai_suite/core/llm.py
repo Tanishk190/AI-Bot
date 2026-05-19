@@ -51,6 +51,7 @@ def build_rag_prompt(question: str, context_blocks: list[str]) -> str:
     return f"""You are an AI assistant for document question answering.
 Use only the provided context from the uploaded documents.
 If the user asks what the document is about, summarize the main topic and key points from the context.
+And give the answer in point form.
 If the answer is not supported by the context, say: I could not find it in the uploaded documents.
 
 Context:

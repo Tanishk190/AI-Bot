@@ -5,6 +5,9 @@ pypdf
 Pillow
 python-dotenv
 PyPDF2
+sentence-transformers
+numpy
+
 
 
 
