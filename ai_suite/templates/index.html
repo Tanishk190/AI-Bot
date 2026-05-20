@@ -92,20 +92,34 @@ Total: $3,700.00</pre>
           </section>
 
           <section class="panel" id="panel-pii" aria-labelledby="pii-label">
-            <div class="section-label" id="pii-label">Input Paragraph</div>
-            <textarea class="textarea-field" placeholder="Paste a paragraph to extract PII from...">John Smith, born on June 3 1990, lives at 42 Elm Street, New York. His email is john.smith@email.com and SSN is 123-45-6789.</textarea>
-            <button class="run-btn" type="button">Extract PII</button>
+            <div class="section-label" id="pii-label">Prompt Configuration</div>
+            
+            <div class="prompt-editor">
+              <label for="pii-system-prompt">System Prompt:</label>
+              <textarea id="pii-system-prompt" class="textarea-field" rows="4">You are a PII (Personally Identifiable Information) extraction specialist. Extract all personal and sensitive information from the given text. Return ONLY a valid JSON object with the fields: name, email, phone, dob, address, ssn, organization, other. If a field is not found, set it to null. Be thorough and accurate.</textarea>
+            </div>
+
+            <div class="prompt-editor">
+              <label for="pii-input-text">Input Paragraph:</label>
+              <textarea id="pii-input-text" class="textarea-field" rows="6" placeholder="Paste a paragraph to extract PII from...">John Smith, born on June 3 1990, lives at 42 Elm Street, New York. His email is john.smith@email.com and phone is (555) 123-4567. He works at Acme Corp and his SSN is 123-45-6789.</textarea>
+            </div>
+
+            <button class="run-btn" id="pii-extract-btn" type="button">Extract PII</button>
 
             <div class="section-label with-space">JSON Output</div>
-            <pre class="json-box">{
+            <pre class="json-box" id="pii-output">{
   <span class="json-key">"name"</span>: <span class="json-str">"John Smith"</span>,
+  <span class="json-key">"email"</span>: <span class="json-str">"john.smith@email.com"</span>,
+  <span class="json-key">"phone"</span>: <span class="json-str">"(555) 123-4567"</span>,
   <span class="json-key">"dob"</span>: <span class="json-str">"1990-06-03"</span>,
   <span class="json-key">"address"</span>: <span class="json-str">"42 Elm Street, New York"</span>,
-  <span class="json-key">"email"</span>: <span class="json-str">"john.smith@email.com"</span>,
-  <span class="json-key">"ssn"</span>: <span class="json-str">"123-45-6789"</span>
+  <span class="json-key">"organization"</span>: <span class="json-str">"Acme Corp"</span>,
+  <span class="json-key">"ssn"</span>: <span class="json-str">"123-45-6789"</span>,
+  <span class="json-key">"other"</span>: <span class="json-str">null</span>
 }</pre>
             <div class="action-row">
-              <button type="button">Download JSON</button>
+              <button type="button" id="pii-download-btn">Download JSON</button>
+              <button type="button" id="pii-copy-btn">Copy JSON</button>
             </div>
           </section>
 

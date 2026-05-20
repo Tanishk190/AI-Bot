@@ -132,3 +132,93 @@ if (chatForm) {
     }
   });
 }
+
+// PII Extractor
+const piiSystemPrompt = document.querySelector("#pii-system-prompt");
+const piiInputText = document.querySelector("#pii-input-text");
+const piiExtractBtn = document.querySelector("#pii-extract-btn");
+const piiOutput = document.querySelector("#pii-output");
+const piiDownloadBtn = document.querySelector("#pii-download-btn");
+const piiCopyBtn = document.querySelector("#pii-copy-btn");
+
+let lastPiiData = null;
+
+if (piiExtractBtn) {
+  piiExtractBtn.addEventListener("click", async () => {
+    const text = piiInputText.value.trim();
+    const systemPrompt = piiSystemPrompt.value.trim();
+
+    if (!text) {
+      piiOutput.textContent = "❌ Error: Input text is required.";
+      return;
+    }
+
+    if (!systemPrompt) {
+      piiOutput.textContent = "❌ Error: System prompt is required.";
+      return;
+    }
+
+    piiExtractBtn.disabled = true;
+    piiOutput.textContent = "⏳ Extracting PII...";
+
+    try {
+      const response = await fetch("/api/pii/extract", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: text,
+          system_prompt: systemPrompt,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "PII extraction failed.");
+      }
+
+      lastPiiData = data.data;
+      let output = data.formatted;
+      
+      piiOutput.textContent = output;
+    } catch (error) {
+      piiOutput.textContent = `❌ Error: ${error.message}`;
+    } finally {
+      piiExtractBtn.disabled = false;
+    }
+  });
+}
+
+if (piiCopyBtn) {
+  piiCopyBtn.addEventListener("click", () => {
+    if (!lastPiiData) {
+      alert("Extract PII first");
+      return;
+    }
+    const text = JSON.stringify(lastPiiData, null, 2);
+    navigator.clipboard.writeText(text).then(() => {
+      piiCopyBtn.textContent = "✓ Copied!";
+      setTimeout(() => {
+        piiCopyBtn.textContent = "Copy JSON";
+      }, 2000);
+    });
+  });
+}
+
+if (piiDownloadBtn) {
+  piiDownloadBtn.addEventListener("click", () => {
+    if (!lastPiiData) {
+      alert("Extract PII first");
+      return;
+    }
+    const json = JSON.stringify(lastPiiData, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pii_extraction.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
