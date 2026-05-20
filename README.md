@@ -13,7 +13,7 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 |---|---------|--------|-------------|
 | 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
 | 2 | 🔍 **OCR** | 📋 Planned | Extract text from images (PNG, JPG, JPEG) |
-| 3 | 🔐 **PII Extractor** | 📋 Planned | Detect sensitive info: names, emails, SSNs, etc. |
+| 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with JSON output |
 | 4 | 📊 **Sentiment Analysis** | 📋 Planned | Sentiment, confidence, tone, reasoning |
 | 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
 
@@ -24,19 +24,20 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 ```
 AI-Bot/
 ├── ai_suite/
-│   ├── app.py                      # Flask main app
+│   ├── app.py                      # Flask main app with all endpoints
 │   ├── core/
 │   │   ├── llm.py                  # OpenAI GPT-4o wrapper
-│   │   └── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
+│   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
+│   │   └── pii.py                  # PII extraction with custom prompts
 │   ├── static/
-│   │   ├── css/app.css             # Styling
-│   │   └── js/app.js               # Client-side logic
+│   │   ├── css/app.css             # Styling with PII editor section
+│   │   └── js/app.js               # Client-side logic (chat + PII handlers)
 │   ├── templates/
-│   │   └── index.html              # UI layout
+│   │   └── index.html              # UI layout (5 feature tabs)
 │   ├── requirements.txt            # Python dependencies
 │   ├── .env                        # API keys (not committed)
 │   └── .gitignore
-├── .gitignore                      # Root-level gitignore
+├── .gitignore                      # Root-level gitignore (venv, conda, IDE)
 └── README.md
 ```
 
@@ -110,7 +111,7 @@ Visit: **http://127.0.0.1:5000**
 
 ## How It Works
 
-### 💬 AI Chat (Currently Active)
+### 💬 AI Chat
 
 **User Flow:**
 1. Upload PDF, TXT, or DOCX files
@@ -134,17 +135,43 @@ Q: Who wrote this?
 ✅ Answers accurately with semantic search
 ```
 
+### 🔐 PII Extractor
+
+**User Flow:**
+1. Paste text to analyze into the input textarea
+2. Customize the system prompt to specify which PII fields to extract
+3. Click "Extract PII" button
+4. Get JSON output with all detected PII fields
+5. Copy JSON or download as file
+
+**Key Features:**
+- **Customizable Prompts:** Edit system prompt to define exactly what to extract
+- **JSON Output:** Structured, parseable results
+- **Easy Sharing:** Copy or download extracted PII
+- **Safe Processing:** Uses OpenAI API, no data persistence
+
+**Example System Prompt:**
+```
+Extract PII from the text below. Return valid JSON with these fields:
+You are a PII (Personally Identifiable Information) extraction specialist. Extract all personal and sensitive information from the given text. Return ONLY a valid JSON object with All the PII feilds mentioned . Each Person Should be a top level Key name Person 1 , Person 2 , etc. If a field is not found, set it to null. Be thorough and accurate.
+```
+
 ---
 
 ## Current Development
 
-**Recent Changes (May 19, 2026):**
+**Recent Changes (May 20, 2026):**
+- ✅ Built PII Extractor with editable system/user prompts
+- ✅ Added JSON parsing with markdown code fence handling
+- ✅ Removed token tracking feature (simplified API)
+- ✅ Fixed Flask import errors and unpacking bugs
+- ✅ Tested PII extraction end-to-end
+
+**Previous Milestones:**
 - ✅ Migrated from Hugging Face to OpenAI GPT-4o
 - ✅ Implemented semantic search RAG (sentence-transformers)
 - ✅ Multi-strategy document chunking
 - ✅ Flask web interface with real-time indexing
-- ✅ Clean error handling and fallbacks
-- ✅ Updated UI ("Searching Documents..." instead of old messages)
 
 **Git Branch:** `AI_chat`
 
@@ -210,10 +237,10 @@ numpy
 ## Next Steps (TODO)
 
 - [ ] Build OCR feature (EasyOCR + image upload)
-- [ ] Build PII Extractor (pattern detection + GPT-4o)
 - [ ] Build Sentiment Analysis (GPT-4o analysis + UI cards)
 - [ ] Build Document Classifier (cosine similarity + relevance scoring)
 - [ ] Add database persistence (chat history + indexed documents)
+- [ ] Add chat history export (JSON/CSV)
 - [ ] Deploy to production (Heroku/Railway)
 
 ---
