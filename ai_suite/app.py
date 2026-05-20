@@ -8,9 +8,11 @@ load_dotenv()
 try:
     from core.llm import generate_completion, build_rag_prompt
     from core.rag import load_documents, retrieve_relevant_chunks, Chunk
+    from core.pii import extract_pii, format_pii_for_display
 except ModuleNotFoundError:
     from ai_suite.core.llm import generate_completion, build_rag_prompt
     from ai_suite.core.rag import load_documents, retrieve_relevant_chunks, Chunk
+    from ai_suite.core.pii import extract_pii, format_pii_for_display
 
 
 app = Flask(__name__)
@@ -128,6 +130,31 @@ def _group_by_source(chunks: list) -> list[dict]:
         by_source[chunk.source] += 1
     
     return [{"name": source, "chunks": count} for source, count in by_source.items()]
+
+
+@app.post("/api/pii/extract")
+def pii_extract():
+    """Extract PII using custom system prompt."""
+    payload = request.get_json(silent=True) or {}
+    text = (payload.get("text") or "").strip()
+    system_prompt = (payload.get("system_prompt") or "").strip()
+    
+    if not text:
+        return jsonify({"error": "Input text is required."}), 400
+    
+    if not system_prompt:
+        return jsonify({"error": "System prompt is required."}), 400
+    
+    try:
+        pii_data = extract_pii(text, system_prompt)
+        return jsonify({
+            "data": pii_data,
+            "formatted": format_pii_for_display(pii_data)
+        })
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
 
 
 if __name__ == "__main__":
