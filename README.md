@@ -1,4 +1,4 @@
-# AI Suite 🤖
+# DocuMind🤖
 > Knovos Internship Project | Tanishk | May 2026
 
 A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o**. Features RAG-powered Q&A, OCR, PII extraction, sentiment analysis, and document classification.
