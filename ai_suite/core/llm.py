@@ -1,22 +1,18 @@
 """LLM wrapper for OpenAI GPT-4o models."""
+import json
 import os
 from openai import OpenAI, APIError, APIConnectionError
 
 
-API_KEY = os.getenv("OPENAI_API_KEY")
+def initialize_client():
+    api_key = os.getenv("OPENAI_API_KEY")  # read here
+    if not api_key:
+        raise RuntimeError("Missing OPENAI_API_KEY...")
+    return OpenAI(api_key=api_key)
 DEFAULT_MODEL = "gpt-4o"
 
 
-def initialize_client():
-    """Initialize OpenAI client."""
-    if not API_KEY:
-        raise RuntimeError(
-            "Missing OPENAI_API_KEY. Add it to your .env file or set the environment variable."
-        )
-    return OpenAI(api_key=API_KEY)
-
-
-def generate_completion(prompt: str, model: str = DEFAULT_MODEL) -> str:
+def generate_completion(prompt: str, model: str = DEFAULT_MODEL, system_prompt: str = None) -> str:
     """
     Generate completion using OpenAI GPT-4o.
     
@@ -29,10 +25,11 @@ def generate_completion(prompt: str, model: str = DEFAULT_MODEL) -> str:
     """
     try:
         client = initialize_client()
+        system_message = system_prompt or "You are a helpful AI assistant for document analysis."
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "You are a helpful AI assistant for document analysis."},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
@@ -60,5 +57,36 @@ Context:
 Question:
 {question}
 
-Answer:"""
+    Answer:"""
+
+
+def parse_llm_json(response: str) -> dict:
+    """
+    Parse JSON from LLM response, handling markdown fences.
+    
+    Args:
+        response: Raw LLM response
+        
+    Returns:
+        Parsed JSON dict
+    """
+    if response.strip().startswith("```"):
+        lines = response.split("\n")
+        json_lines = []
+        in_json = False
+        for line in lines:
+            if line.strip().startswith("```json"):
+                in_json = True
+                continue
+            if line.strip().startswith("```"):
+                in_json = False
+                continue
+            if in_json or (json_lines and not line.strip().startswith("```")):
+                json_lines.append(line)
+        response = "\n".join(json_lines)
+
+    try:
+        return json.loads(response.strip())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Failed to parse LLM response as JSON: {str(exc)}") from exc
 

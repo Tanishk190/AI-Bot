@@ -332,3 +332,143 @@ if (piiDownloadBtn) {
     URL.revokeObjectURL(url);
   });
 }
+
+// ── Sentiment Analysis ────────────────────────────────────────────────────────
+const sentimentDocuments = document.querySelector("#sentiment-documents");
+const sentimentFileStatus = document.querySelector("#sentiment-file-status");
+const sentimentTextarea = document.querySelector("#sentiment-textarea");
+const sentimentAnalyzeBtn = document.querySelector("#sentiment-analyze-btn");
+const sentimentStatus = document.querySelector("#sentiment-status");
+const sentimentVal = document.querySelector("#sentiment-val");
+const confidenceVal = document.querySelector("#confidence-val");
+const toneVal = document.querySelector("#tone-val");
+const reasoningText = document.querySelector("#reasoning-text");
+const positiveMeter = document.querySelector("#positive-meter");
+const neutralMeter = document.querySelector("#neutral-meter");
+const negativeMeter = document.querySelector("#negative-meter");
+const positivePercent = document.querySelector("#positive-percent");
+const neutralPercent = document.querySelector("#neutral-percent");
+const negativePercent = document.querySelector("#negative-percent");
+
+async function parseJsonResponse(response) {
+  const body = await response.text();
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    const message = response.ok ? "Unexpected response from server." : `Request failed (${response.status}).`;
+    throw new Error(message);
+  }
+}
+
+if (sentimentDocuments) {
+  sentimentDocuments.addEventListener("change", () => {
+    const count = sentimentDocuments.files.length;
+    if (!sentimentFileStatus) return;
+    if (count === 0) {
+      sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
+      return;
+    }
+    if (sentimentTextarea) sentimentTextarea.value = "";
+    const names = Array.from(sentimentDocuments.files).map((file) => file.name).join(", ");
+    sentimentFileStatus.textContent = `Selected: ${names}`;
+  });
+}
+
+if (sentimentTextarea) {
+  sentimentTextarea.addEventListener("input", () => {
+    const text = sentimentTextarea.value.trim();
+    if (!sentimentDocuments) return;
+    if (!text) {
+      if (sentimentFileStatus) sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
+      return;
+    }
+    if (sentimentDocuments.files.length > 0) {
+      sentimentDocuments.value = "";
+      if (sentimentFileStatus) sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
+    }
+    if (sentimentFileStatus) sentimentFileStatus.textContent = "Using text input.";
+  });
+}
+
+if (sentimentAnalyzeBtn) {
+  sentimentAnalyzeBtn.addEventListener("click", async () => {
+    const text = sentimentTextarea ? sentimentTextarea.value.trim() : "";
+    const hasDocuments = sentimentDocuments && sentimentDocuments.files.length > 0;
+
+    if (!text && !hasDocuments) {
+      if (sentimentStatus) {
+        sentimentStatus.textContent = "❌ Error: Provide text or upload documents";
+        sentimentStatus.dataset.state = "error";
+      }
+      return;
+    }
+    if (text && hasDocuments) {
+      if (sentimentStatus) {
+        sentimentStatus.textContent = "❌ Error: Provide either text or documents, not both.";
+        sentimentStatus.dataset.state = "error";
+      }
+      return;
+    }
+
+    sentimentAnalyzeBtn.disabled = true;
+    sentimentAnalyzeBtn.textContent = "Analyzing...";
+    if (sentimentStatus) {
+      sentimentStatus.textContent = "";
+      sentimentStatus.dataset.state = "";
+    }
+
+    try {
+      const formData = new FormData();
+      if (text) formData.append("text", text);
+      if (hasDocuments) {
+        Array.from(sentimentDocuments.files).forEach((file) => formData.append("documents", file));
+      }
+
+      const response = await fetch("/api/sentiment/analyze", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await parseJsonResponse(response);
+
+      if (!response.ok) throw new Error(data.error || `Sentiment analysis failed (${response.status}).`);
+
+      const sentiment = data.sentiment;
+      if (sentimentVal) {
+        sentimentVal.textContent = sentiment;
+        sentimentVal.className = "sent-val";
+        sentimentVal.style.color = "";
+        if (sentiment === "Positive") sentimentVal.classList.add("pos");
+        if (sentiment === "Negative") sentimentVal.style.color = "var(--red)";
+        if (sentiment === "Neutral") sentimentVal.style.color = "var(--gray)";
+      }
+
+      const confidence = data.confidence;
+      if (confidenceVal) confidenceVal.textContent = `${confidence}%`;
+      if (toneVal) toneVal.textContent = data.tone;
+      if (reasoningText) reasoningText.textContent = data.reasoning;
+
+      if (positiveMeter && neutralMeter && negativeMeter) {
+        positiveMeter.style.width = sentiment === "Positive" ? `${confidence}%` : "10%";
+        neutralMeter.style.width = sentiment === "Neutral" ? `${confidence}%` : "10%";
+        negativeMeter.style.width = sentiment === "Negative" ? `${confidence}%` : "10%";
+      }
+      if (positivePercent) positivePercent.textContent = (sentiment === "Positive" ? confidence : 10) + "%";
+      if (neutralPercent) neutralPercent.textContent = (sentiment === "Neutral" ? confidence : 10) + "%";
+      if (negativePercent) negativePercent.textContent = (sentiment === "Negative" ? confidence : 10) + "%";
+
+      if (sentimentStatus) {
+        sentimentStatus.textContent = `Analyzed from: ${data.source} · ${data.char_count} characters`;
+        sentimentStatus.dataset.state = "success";
+      }
+    } catch (error) {
+      if (sentimentStatus) {
+        sentimentStatus.textContent = `❌ Error: ${error.message}`;
+        sentimentStatus.dataset.state = "error";
+      }
+    } finally {
+      sentimentAnalyzeBtn.disabled = false;
+      sentimentAnalyzeBtn.textContent = "Analyze";
+    }
+  });
+}
