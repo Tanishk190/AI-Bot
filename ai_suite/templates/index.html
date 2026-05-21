@@ -133,36 +133,46 @@ Total: $3,700.00</pre>
 
           <section class="panel" id="panel-sentiment" aria-labelledby="sentiment-label">
             <div class="section-label" id="sentiment-label">Input Text</div>
-            <textarea class="textarea-field" placeholder="Enter text for sentiment analysis...">The product exceeded all expectations. Delivery was fast and the quality is outstanding. Will definitely buy again!</textarea>
-            <button class="run-btn" type="button">Analyze</button>
+            <div style="display: flex; align-items: stretch; border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-md); overflow: hidden; background: var(--color-background-primary);">
+              <label class="upload-icon" id="sentiment-doc-trigger" title="Upload documents" style="display: flex; align-items: center; justify-content: center; width: 52px; border-right: 1px solid var(--color-border-secondary); cursor: pointer; background: var(--color-background-secondary); font-size: 16px; font-weight: 600;">
+                🗁
+                <input id="sentiment-documents" type="file" accept=".pdf,.txt,.docx" multiple style="display: none;">
+              </label>
+              <textarea class="textarea-field" id="sentiment-textarea" style="border: 0; margin-bottom: 0; border-radius: 0; min-height: 150px; padding: 12px 14px; flex: 1;" placeholder="Paste text here or click 🗁 to upload...">The product exceeded all expectations. Delivery was fast and the quality is outstanding. Will definitely buy again!</textarea>
+            </div>
+            <div class="status-line" id="sentiment-file-status">No documents selected. Click 🗁 to upload.</div>
+            <button class="run-btn" id="sentiment-analyze-btn" type="button">Analyze</button>
+            <div class="status-line" id="sentiment-status"></div>
 
             <div class="sentiment-result">
               <div class="sent-card">
                 <div class="sent-label">Sentiment</div>
-                <div class="sent-val pos">Positive</div>
+                <div class="sent-val pos" id="sentiment-val">Positive</div>
               </div>
               <div class="sent-card">
                 <div class="sent-label">Confidence</div>
-                <div class="sent-val">94%</div>
+                <div class="sent-val" id="confidence-val">94%</div>
               </div>
               <div class="sent-card">
                 <div class="sent-label">Tone</div>
-                <div class="sent-val small">Enthusiastic</div>
+                <div class="sent-val small" id="tone-val">Enthusiastic</div>
               </div>
             </div>
 
             <div class="meter-wrap">
-              <div class="meter-label"><span>Positive</span><span>94%</span></div>
-              <div class="meter"><div class="meter-fill positive" style="width:94%"></div></div>
+              <div class="meter-label"><span>Positive</span><span id="positive-percent">94%</span></div>
+              <div class="meter"><div class="meter-fill positive" id="positive-meter" style="width:94%"></div></div>
             </div>
             <div class="meter-wrap">
-              <div class="meter-label"><span>Neutral</span><span>4%</span></div>
-              <div class="meter"><div class="meter-fill neutral" style="width:4%"></div></div>
+              <div class="meter-label"><span>Neutral</span><span id="neutral-percent">4%</span></div>
+              <div class="meter"><div class="meter-fill neutral" id="neutral-meter" style="width:4%"></div></div>
             </div>
             <div class="meter-wrap">
-              <div class="meter-label"><span>Negative</span><span>2%</span></div>
-              <div class="meter"><div class="meter-fill negative" style="width:2%"></div></div>
+              <div class="meter-label"><span>Negative</span><span id="negative-percent">2%</span></div>
+              <div class="meter"><div class="meter-fill negative" id="negative-meter" style="width:2%"></div></div>
             </div>
+            <div class="section-label with-space">Analysis Details</div>
+            <p class="reasoning-text" id="reasoning-text">Example reasoning: The use of positive adjectives and exclamation marks indicates high satisfaction.</p>
           </section>
 
           <section class="panel" id="panel-classify" aria-labelledby="classify-label">

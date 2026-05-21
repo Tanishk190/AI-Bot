@@ -1,4 +1,6 @@
 """AI Suite - Document Intelligence Web App with OpenAI GPT-4o."""
+from email.mime import text
+
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 import os
@@ -6,11 +8,11 @@ import os
 load_dotenv()
 
 try:
-    from core.llm import generate_completion, build_rag_prompt
+    from core.llm import generate_completion, build_rag_prompt, parse_llm_json
     from core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from core.pii import extract_pii, format_pii_for_display
 except ModuleNotFoundError:
-    from ai_suite.core.llm import generate_completion, build_rag_prompt
+    from ai_suite.core.llm import generate_completion, build_rag_prompt, parse_llm_json
     from ai_suite.core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from ai_suite.core.pii import extract_pii, format_pii_for_display
 
@@ -113,7 +115,8 @@ def chat_message():
         ]
         prompt = build_rag_prompt(question, context_blocks)
         
-        answer = generate_completion(prompt)
+        system_p, user_p = build_rag_prompt(question, context_blocks)
+        answer = generate_completion(user_p, system_prompt=system_p)
         sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
         
         return jsonify({"answer": answer, "sources": sources})
@@ -155,6 +158,67 @@ def pii_extract():
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
+
+
+@app.post("/api/sentiment/analyze")
+def sentiment_analyze():
+    """Analyze sentiment of text or documents."""
+    text = (request.form.get("text") or "").strip()
+    documents = request.files.getlist("documents")
+
+    if not text and not documents:
+        return jsonify({"error": "Provide text or upload documents"}), 400
+    if text and documents:
+        return jsonify({"error": "Provide either text or documents, not both."}), 400
+
+    try:
+        combined_text = ""
+        source = None
+
+        if documents:
+            chunks = load_documents(documents)
+            if chunks:
+                combined_text = " ".join(chunk.text for chunk in chunks)
+                source = "document"
+            else:
+                return jsonify({"error": "No readable text found in uploaded documents. If this is a scanned PDF, run OCR first."}), 400
+
+        if text:
+            combined_text = text
+            source = "text"
+
+        normalized_text = " ".join(combined_text.split())
+        normalized_text = normalized_text[:3000]
+        char_count = len(normalized_text)
+
+        system_prompt = (
+            "You are a sentiment analysis assistant for legal document review. Analyze the sentiment of the given text. "
+            "Return ONLY a valid JSON object with these exact fields:\n"
+            "{\n"
+            "  \"sentiment\": \"Positive\" | \"Negative\" | \"Neutral\",\n"
+            "  \"confidence\": integer 0-100,\n"
+            "  \"tone\": single word descriptor (e.g. Frustrated, Enthusiastic, Hostile, Calm, Concerned, Satisfied, Aggressive),\n"
+            "  \"reasoning\": 1-2 sentence explanation of why this sentiment was assigned\n"
+            "}\n"
+            "This is for legal eDiscovery context — flag hostile or adversarial tone especially."
+        )
+
+        response = generate_completion(normalized_text, system_prompt=system_prompt)
+        sentiment_data = parse_llm_json(response)
+        if not isinstance(sentiment_data, dict):
+            raise ValueError("LLM response must be a JSON object.")
+
+        return jsonify({
+            **sentiment_data,
+            "source": source,
+            "char_count": char_count,
+        })
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"error": f"Sentiment analysis failed: {str(exc)}"}), 500
 
 
 if __name__ == "__main__":

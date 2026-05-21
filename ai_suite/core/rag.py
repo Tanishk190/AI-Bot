@@ -196,15 +196,44 @@ def _extract_text(file_storage, filename: str) -> str:
 
 def _extract_pdf(file_storage) -> str:
     """Extract text from PDF."""
+    text = ""
     try:
         from PyPDF2 import PdfReader
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
         pdf = PdfReader(file_storage)
+        for page in pdf.pages:
+            extracted = page.extract_text() or ""
+            text += extracted
+        if text.strip():
+            return text
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Error extracting text with PyPDF2: {e}")
+
+    try:
+        from pypdf import PdfReader
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        try:
+            pdf = PdfReader(file_storage, strict=False)
+        except TypeError:
+            pdf = PdfReader(file_storage)
         text = ""
         for page in pdf.pages:
-            text += page.extract_text()
+            extracted = page.extract_text() or ""
+            text += extracted
         return text
     except ImportError:
-        return "[PDF extraction requires PyPDF2]"
+        return "[PDF extraction requires PyPDF2 or pypdf]"
+    except Exception as e:
+        print(f"Error extracting text with pypdf: {e}")
+        return text
 
 
 def _extract_docx(file_storage) -> str:
