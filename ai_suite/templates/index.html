@@ -33,37 +33,52 @@
       <section class="main">
         <header class="topbar">
           <h1 id="page-title">AI Chat</h1>
-          <span class="badge" id="page-badge">RAG Enabled</span>
+          <div class="topbar-actions">
+
+            <!-- Knowledge Base dropdown toggle — only visible on chat panel -->
+            <div class="kb-dropdown-wrap" id="kb-dropdown-wrap">
+              <button class="kb-toggle-btn" id="kb-toggle-btn" type="button" aria-expanded="false" aria-controls="kb-dropdown">
+                <span class="kb-toggle-icon">&#9776;</span>
+                Knowledge Base
+                <span class="kb-doc-badge" id="kb-doc-badge" hidden>0 docs</span>
+                <span class="kb-chevron" id="kb-chevron">&#8964;</span>
+              </button>
+
+              <!-- Dropdown panel -->
+              <div class="kb-dropdown" id="kb-dropdown" aria-hidden="true">
+                <div class="kb-dropdown-inner">
+                  <div class="section-label">Knowledge Base</div>
+                  <label class="upload-zone" id="chat-upload-zone">
+                    <input id="chat-documents" type="file" name="documents" accept=".pdf,.txt,.docx" multiple>
+                    <span class="upload-icon">DOC</span>
+                    <strong>Drop documents here or click to upload</strong>
+                    <small>PDF, TXT, DOCX supported</small>
+                  </label>
+                  <button class="run-btn" id="chat-index-btn" type="button">Index documents</button>
+                  <div class="status-line" id="chat-index-status">No documents indexed yet.</div>
+                </div>
+              </div>
+            </div>
+
+            <span class="badge" id="page-badge">RAG Enabled</span>
+          </div>
         </header>
 
         <div class="content">
-          <section class="panel active" id="panel-chat" aria-labelledby="chat-label">
-            <div class="split-layout">
-              <div>
-                <div class="section-label" id="chat-label">Knowledge Base</div>
-                <label class="upload-zone" id="chat-upload-zone">
-                  <input id="chat-documents" type="file" name="documents" accept=".pdf,.txt,.docx" multiple>
-                  <span class="upload-icon">DOC</span>
-                  <strong>Drop documents here or click to upload</strong>
-                  <small>PDF, TXT, DOCX supported</small>
-                </label>
-                <button class="run-btn" id="chat-index-btn" type="button">Index documents</button>
-                <div class="status-line" id="chat-index-status">No documents indexed yet.</div>
-              </div>
-
-              <div>
-                <div class="section-label">Conversation</div>
-                <div class="chat-history" id="chat-history">
-                  <div class="msg">
-                    <div class="avatar ai">AI</div>
-                    <div class="bubble ai">Hello! Upload documents, index them, and ask me anything about them. I will answer using OpenAI GPT-4o with retrieved context.</div>
-                  </div>
+          <!-- AI Chat — full width conversation -->
+          <section class="panel active" id="panel-chat" aria-labelledby="chat-heading">
+            <div class="chat-wrap">
+              <div class="section-label" id="chat-heading">Conversation</div>
+              <div class="chat-history" id="chat-history">
+                <div class="msg">
+                  <div class="avatar ai">AI</div>
+                  <div class="bubble ai">Hello! Upload documents using the <strong>Knowledge Base</strong> button above, index them, and ask me anything. I will answer using OpenAI GPT-4o with retrieved context.</div>
                 </div>
-                <form class="chat-input-row" id="chat-form">
-                  <input id="chat-input" type="text" placeholder="Ask about your documents..." aria-label="Ask about your documents">
-                  <button type="submit" aria-label="Send message">Send</button>
-                </form>
               </div>
+              <form class="chat-input-row" id="chat-form">
+                <input id="chat-input" type="text" placeholder="Ask about your documents..." aria-label="Ask about your documents">
+                <button type="submit" aria-label="Send message">Send</button>
+              </form>
             </div>
           </section>
 
@@ -93,7 +108,7 @@ Total: $3,700.00</pre>
 
           <section class="panel" id="panel-pii" aria-labelledby="pii-label">
             <div class="section-label" id="pii-label">Prompt Configuration</div>
-            
+
             <div class="prompt-editor">
               <label for="pii-system-prompt">System Prompt:</label>
               <textarea id="pii-system-prompt" class="textarea-field" rows="4">You are a PII (Personally Identifiable Information) extraction specialist. Extract all personal and sensitive information from the given text. Return ONLY a valid JSON object with the fields: name, email, phone, dob, address, ssn, organization, other. If a field is not found, set it to null. Be thorough and accurate.</textarea>
