@@ -416,6 +416,48 @@ input:disabled {
   line-height: 1.7;
 }
 
+.table-box {
+  margin-bottom: 12px;
+  min-height: 190px;
+  overflow: auto;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-primary);
+}
+
+.table-empty {
+  padding: 14px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.pii-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pii-table th,
+.pii-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pii-table th {
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pii-table tbody tr:nth-child(even) {
+  background: #fbfcfe;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;

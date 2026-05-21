@@ -143,6 +143,102 @@ const piiCopyBtn = document.querySelector("#pii-copy-btn");
 
 let lastPiiData = null;
 
+function normalizePiiEntities(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (typeof data === "object") {
+    if (Array.isArray(data.entities)) return data.entities;
+    const entries = Object.entries(data);
+    const objectValues = entries.filter(([, value]) => value && typeof value === "object" && !Array.isArray(value));
+    const entityLikeKeys = entries.filter(([key]) => /\d/.test(key) || /person|entity/i.test(key));
+    if (objectValues.length === entries.length && entityLikeKeys.length >= Math.max(1, Math.ceil(entries.length / 2))) {
+      return entries.map(([key, value]) => ({ entity: key, ...value }));
+    }
+    const arrayFields = entries.filter(([, value]) => Array.isArray(value));
+    if (arrayFields.length && arrayFields.length === entries.length) {
+      const lengths = arrayFields.map(([, value]) => value.length);
+      const rowCount = Math.max(...lengths);
+      if (lengths.every((length) => length === rowCount)) {
+        return Array.from({ length: rowCount }, (_, index) => {
+          const row = {};
+          arrayFields.forEach(([key, values]) => {
+            row[key] = values[index];
+          });
+          return row;
+        });
+      }
+    }
+    const arrayValues = arrayFields.map(([, value]) => value);
+    if (arrayValues.length === 1) return arrayValues[0];
+    return [data];
+  }
+  return [data];
+}
+
+function formatPiiCell(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "object") {
+    const jsonValue = JSON.stringify(value);
+    return jsonValue === undefined ? String(value) : jsonValue;
+  }
+  return String(value);
+}
+
+function renderPiiTable(data) {
+  if (!piiOutput) return;
+  const entities = normalizePiiEntities(data);
+  if (!entities.length) {
+    piiOutput.innerHTML = '<div class="table-empty">No PII entities found.</div>';
+    return;
+  }
+
+  const normalized = entities.map((entry) => {
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      return entry;
+    }
+    return { value: entry };
+  });
+
+  const columns = [];
+  normalized.forEach((entry) => {
+    Object.keys(entry).forEach((key) => {
+      if (!columns.includes(key)) {
+        columns.push(key);
+      }
+    });
+  });
+
+  if (!columns.length) {
+    columns.push("value");
+  }
+
+  const table = document.createElement("table");
+  table.className = "pii-table";
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  columns.forEach((column) => {
+    const th = document.createElement("th");
+    th.textContent = column;
+    headerRow.append(th);
+  });
+  thead.append(headerRow);
+
+  const tbody = document.createElement("tbody");
+  normalized.forEach((entry) => {
+    const row = document.createElement("tr");
+    columns.forEach((column) => {
+      const cell = document.createElement("td");
+      cell.textContent = formatPiiCell(entry[column]);
+      row.append(cell);
+    });
+    tbody.append(row);
+  });
+
+  table.append(thead, tbody);
+  piiOutput.innerHTML = "";
+  piiOutput.append(table);
+}
+
 if (piiExtractBtn) {
   piiExtractBtn.addEventListener("click", async () => {
     const text = piiInputText.value.trim();
@@ -178,10 +274,12 @@ if (piiExtractBtn) {
         throw new Error(data.error || "PII extraction failed.");
       }
 
-      lastPiiData = data.data;
-      let output = data.formatted;
-      
-      piiOutput.textContent = output;
+      let piiData = data.data;
+      if (typeof piiData === "string") {
+        piiData = JSON.parse(piiData);
+      }
+      lastPiiData = piiData;
+      renderPiiTable(piiData);
     } catch (error) {
       piiOutput.textContent = `❌ Error: ${error.message}`;
     } finally {

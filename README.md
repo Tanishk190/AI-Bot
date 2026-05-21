@@ -13,7 +13,7 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 |---|---------|--------|-------------|
 | 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
 | 2 | 🔍 **OCR** | 📋 Planned | Extract text from images (PNG, JPG, JPEG) |
-| 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with JSON output |
+| 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with table output + JSON export |
 | 4 | 📊 **Sentiment Analysis** | 📋 Planned | Sentiment, confidence, tone, reasoning |
 | 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
 
@@ -141,12 +141,13 @@ Q: Who wrote this?
 1. Paste text to analyze into the input textarea
 2. Customize the system prompt to specify which PII fields to extract
 3. Click "Extract PII" button
-4. Get JSON output with all detected PII fields
+4. See tabular output with all detected PII fields
 5. Copy JSON or download as file
 
 **Key Features:**
 - **Customizable Prompts:** Edit system prompt to define exactly what to extract
-- **JSON Output:** Structured, parseable results
+- **Table Output:** Clear, dynamic table for one or many entities
+- **JSON Export:** Structured, parseable results on demand
 - **Easy Sharing:** Copy or download extracted PII
 - **Safe Processing:** Uses OpenAI API, no data persistence
 
