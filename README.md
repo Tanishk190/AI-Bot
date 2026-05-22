@@ -3,7 +3,7 @@
 
 A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o**. Features RAG-powered Q&A, OCR, PII extraction, sentiment analysis, and document classification.
 
-**Status:** 🚀 AI Chat feature actively developed and working with semantic search RAG
+**Status:** 🚀 Core features live (AI Chat, PII Extractor, Sentiment Analysis)
 
 ---
 
@@ -14,7 +14,7 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 | 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
 | 2 | 🔍 **OCR** | 📋 Planned | Extract text from images (PNG, JPG, JPEG) |
 | 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with table output + JSON export |
-| 4 | 📊 **Sentiment Analysis** | 📋 Planned | Sentiment, confidence, tone, reasoning |
+| 4 | 📊 **Sentiment Analysis** | ✅ Working | Sentiment, confidence, tone, reasoning |
 | 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
 
 ---
@@ -24,14 +24,14 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 ```
 AI-Bot/
 ├── ai_suite/
-│   ├── app.py                      # Flask main app with all endpoints
+│   ├── app.py                      # Flask main app with all endpoints (chat, PII, sentiment)
 │   ├── core/
 │   │   ├── llm.py                  # OpenAI GPT-4o wrapper
 │   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
 │   │   └── pii.py                  # PII extraction with custom prompts
 │   ├── static/
 │   │   ├── css/app.css             # Styling with PII editor section
-│   │   └── js/app.js               # Client-side logic (chat + PII handlers)
+│   │   └── js/app.js               # Client-side logic (chat + PII + sentiment handlers)
 │   ├── templates/
 │   │   └── index.html              # UI layout (5 feature tabs)
 │   ├── requirements.txt            # Python dependencies
@@ -159,14 +159,32 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 
 ---
 
+### 📊 Sentiment Analysis
+
+**User Flow:**
+1. Provide either direct text or upload PDF/TXT/DOCX (not both)
+2. Text is normalized and truncated to 3000 characters
+3. GPT-4o returns JSON with sentiment, confidence, tone, and reasoning
+4. UI updates cards, meters, and source summary
+
+**Key Features:**
+- **Legal-focused prompt:** Flags hostile/adversarial tone
+- **Multiple inputs:** Text or document upload
+- **Structured output:** JSON parsed and displayed in UI
+- **Source + length:** Shows whether input was text or document and character count
+
+---
+
 ## Current Development
 
-**Recent Changes (May 20, 2026):**
+**Recent Changes (May 21, 2026):**
 - ✅ Built PII Extractor with editable system/user prompts
 - ✅ Added JSON parsing with markdown code fence handling
 - ✅ Removed token tracking feature (simplified API)
 - ✅ Fixed Flask import errors and unpacking bugs
 - ✅ Tested PII extraction end-to-end
+- ✅ Added Sentiment Analysis endpoint + UI (text or document input)
+- ✅ Added LLM JSON parsing helper for structured sentiment output
 
 **Previous Milestones:**
 - ✅ Migrated from Hugging Face to OpenAI GPT-4o
@@ -213,6 +231,11 @@ k = 3                  # Number of chunks to retrieve
 - Verify all dependencies installed: `pip install -r requirements.txt`
 - On Windows, try: `python -m flask run`
 
+**Sentiment analysis errors**
+- Use either text or documents (not both)
+- Scanned PDFs require OCR first (use the OCR panel)
+- TXT/DOCX files are safest for extraction
+
 **Slow first load**
 - Sentence-transformers downloads model on first use (~80MB)
 - This only happens once - subsequent loads are cached
@@ -238,7 +261,6 @@ numpy
 ## Next Steps (TODO)
 
 - [ ] Build OCR feature (EasyOCR + image upload)
-- [ ] Build Sentiment Analysis (GPT-4o analysis + UI cards)
 - [ ] Build Document Classifier (cosine similarity + relevance scoring)
 - [ ] Add database persistence (chat history + indexed documents)
 - [ ] Add chat history export (JSON/CSV)
