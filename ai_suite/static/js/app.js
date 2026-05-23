@@ -333,6 +333,113 @@ if (piiDownloadBtn) {
   });
 }
 
+async function parseJsonResponse(response) {
+  const body = await response.text();
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    const message = response.ok ? "Unexpected response from server." : `Request failed (${response.status}).`;
+    throw new Error(message);
+  }
+}
+
+// ── OCR ───────────────────────────────────────────────────────────────────────
+const ocrImages = document.querySelector("#ocr-images");
+const ocrStatus = document.querySelector("#ocr-status");
+const ocrRunBtn = document.querySelector("#ocr-run-btn");
+const ocrResult = document.querySelector("#ocr-result");
+const ocrCopyBtn = document.querySelector("#ocr-copy-btn");
+const ocrDownloadBtn = document.querySelector("#ocr-download-btn");
+
+let lastOcrText = "";
+
+if (ocrImages) {
+  ocrImages.addEventListener("change", () => {
+    const count = ocrImages.files.length;
+    if (!ocrStatus) return;
+    if (count === 0) {
+      ocrStatus.textContent = "No images selected.";
+      ocrStatus.dataset.state = "";
+      return;
+    }
+    ocrStatus.textContent = `${count} image${count === 1 ? "" : "s"} selected.`;
+    ocrStatus.dataset.state = "ready";
+  });
+}
+
+if (ocrRunBtn) {
+  ocrRunBtn.addEventListener("click", async () => {
+    if (!ocrImages || !ocrImages.files.length) {
+      if (ocrStatus) {
+        ocrStatus.textContent = "Choose PNG, JPG, or JPEG files first.";
+        ocrStatus.dataset.state = "error";
+      }
+      return;
+    }
+
+    ocrRunBtn.disabled = true;
+    ocrRunBtn.textContent = "Running...";
+    if (ocrStatus) {
+      ocrStatus.textContent = "Extracting text...";
+      ocrStatus.dataset.state = "ready";
+    }
+    if (ocrResult) ocrResult.textContent = "⏳ Extracting...";
+
+    try {
+      const formData = new FormData();
+      Array.from(ocrImages.files).forEach((file) => formData.append("images", file));
+
+      const response = await fetch("/api/ocr/extract", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await parseJsonResponse(response);
+
+      if (!response.ok) throw new Error(data.error || `OCR failed (${response.status}).`);
+
+      lastOcrText = data.text || "";
+      if (ocrResult) ocrResult.textContent = lastOcrText || "No text found.";
+      if (ocrStatus) {
+        ocrStatus.textContent = "OCR complete.";
+        ocrStatus.dataset.state = "success";
+      }
+    } catch (error) {
+      if (ocrResult) ocrResult.textContent = `❌ Error: ${error.message}`;
+      if (ocrStatus) {
+        ocrStatus.textContent = error.message;
+        ocrStatus.dataset.state = "error";
+      }
+    } finally {
+      ocrRunBtn.disabled = false;
+      ocrRunBtn.textContent = "Run OCR";
+    }
+  });
+}
+
+if (ocrCopyBtn) {
+  ocrCopyBtn.addEventListener("click", () => {
+    if (!lastOcrText) { alert("Run OCR first"); return; }
+    navigator.clipboard.writeText(lastOcrText).then(() => {
+      ocrCopyBtn.textContent = "✓ Copied!";
+      setTimeout(() => { ocrCopyBtn.textContent = "Copy text"; }, 2000);
+    });
+  });
+}
+
+if (ocrDownloadBtn) {
+  ocrDownloadBtn.addEventListener("click", () => {
+    if (!lastOcrText) { alert("Run OCR first"); return; }
+    const blob = new Blob([lastOcrText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ocr_text.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 // ── Sentiment Analysis ────────────────────────────────────────────────────────
 const sentimentDocuments = document.querySelector("#sentiment-documents");
 const sentimentFileStatus = document.querySelector("#sentiment-file-status");
@@ -349,17 +456,6 @@ const negativeMeter = document.querySelector("#negative-meter");
 const positivePercent = document.querySelector("#positive-percent");
 const neutralPercent = document.querySelector("#neutral-percent");
 const negativePercent = document.querySelector("#negative-percent");
-
-async function parseJsonResponse(response) {
-  const body = await response.text();
-  if (!body) return {};
-  try {
-    return JSON.parse(body);
-  } catch (error) {
-    const message = response.ok ? "Unexpected response from server." : `Request failed (${response.status}).`;
-    throw new Error(message);
-  }
-}
 
 if (sentimentDocuments) {
   sentimentDocuments.addEventListener("change", () => {

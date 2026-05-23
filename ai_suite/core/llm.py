@@ -42,22 +42,22 @@ def generate_completion(prompt: str, model: str = DEFAULT_MODEL, system_prompt: 
         raise RuntimeError(f"OpenAI API error: {str(exc)}") from exc
 
 
-def build_rag_prompt(question: str, context_blocks: list[str]) -> str:
-    """Build RAG prompt from question and context."""
+def build_rag_prompt(question: str, context_blocks: list[str]) -> tuple[str, str]:
+    """Build system and user prompts for RAG."""
     context = "\n\n".join(context_blocks).strip()
-    return f"""You are an AI assistant for document question answering.
-Use only the provided context from the uploaded documents.
-If the user asks what the document is about, summarize the main topic and key points from the context.
-And give the answer in point form.
-If the answer is not supported by the context, say: I could not find it in the uploaded documents.
-
-Context:
-{context}
-
-Question:
-{question}
-
-    Answer:"""
+    system_prompt = (
+        "You are an AI assistant for document question answering. "
+        "Use only the provided context from the uploaded documents. "
+        "If the user asks what the document is about, summarize the main topic and key points from the context, "
+        "and give the answer in point form. "
+        "If the answer is not supported by the context, say: I could not find it in the uploaded documents."
+    )
+    user_prompt = (
+        f"Context:\n{context}\n\n"
+        f"Question:\n{question}\n\n"
+        "Answer:"
+    )
+    return system_prompt, user_prompt
 
 
 def parse_llm_json(response: str) -> dict:
@@ -89,4 +89,3 @@ def parse_llm_json(response: str) -> dict:
         return json.loads(response.strip())
     except json.JSONDecodeError as exc:
         raise ValueError(f"Failed to parse LLM response as JSON: {str(exc)}") from exc
-
