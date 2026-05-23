@@ -84,25 +84,21 @@
 
           <section class="panel" id="panel-ocr" aria-labelledby="ocr-label">
             <div class="section-label" id="ocr-label">Upload Image</div>
-            <label class="upload-zone">
-              <input type="file" name="images" accept=".png,.jpg,.jpeg" multiple>
+            <label class="upload-zone" id="ocr-upload-zone">
+              <input id="ocr-images" type="file" name="images" accept=".png,.jpg,.jpeg" multiple>
               <span class="upload-icon">IMG</span>
               <strong>Drop an image here or click to upload</strong>
               <small>PNG, JPG, JPEG supported</small>
             </label>
+            <div class="status-line" id="ocr-status">No images selected.</div>
+            <button class="run-btn" id="ocr-run-btn" type="button">Run OCR</button>
 
             <div class="section-label">Extracted Text</div>
-            <pre class="result-box">Invoice #INV-2024-0012
-Date: March 15, 2024
-Bill To: Acme Corp, 123 Main St
-
-Item: Legal Consultation - $2,500.00
-Item: Document Review - $1,200.00
-Total: $3,700.00</pre>
+            <pre class="result-box" id="ocr-result">Run OCR to see extracted text.</pre>
 
             <div class="action-row">
-              <button type="button">Copy text</button>
-              <button type="button">Download ZIP</button>
+              <button type="button" id="ocr-copy-btn">Copy text</button>
+              <button type="button" id="ocr-download-btn">Download TXT</button>
             </div>
           </section>
 

@@ -11,10 +11,12 @@ try:
     from core.llm import generate_completion, build_rag_prompt, parse_llm_json
     from core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from core.pii import extract_pii, format_pii_for_display
+    from core.ocr import extract_ocr_text
 except ModuleNotFoundError:
     from ai_suite.core.llm import generate_completion, build_rag_prompt, parse_llm_json
     from ai_suite.core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from ai_suite.core.pii import extract_pii, format_pii_for_display
+    from ai_suite.core.ocr import extract_ocr_text
 
 
 app = Flask(__name__)
@@ -113,8 +115,6 @@ def chat_message():
             f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
             for chunk in relevant
         ]
-        prompt = build_rag_prompt(question, context_blocks)
-        
         system_p, user_p = build_rag_prompt(question, context_blocks)
         answer = generate_completion(user_p, system_prompt=system_p)
         sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
@@ -158,6 +158,35 @@ def pii_extract():
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
+
+
+@app.post("/api/ocr/extract")
+def ocr_extract():
+    """Extract text from uploaded images using OCR."""
+    images = request.files.getlist("images")
+    if not images:
+        return jsonify({"error": "Upload at least one image."}), 400
+
+    try:
+        results = extract_ocr_text(images)
+        if not results:
+            return jsonify({"error": "No readable text found in uploaded images."}), 400
+
+        combined_text = "\n\n".join(
+            f"{item['filename']}\n{item['text']}".strip() for item in results if item.get("text")
+        ).strip()
+
+        if not combined_text:
+            return jsonify({"error": "No readable text found in uploaded images."}), 400
+
+        return jsonify({
+            "text": combined_text,
+            "results": results,
+        })
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"error": f"OCR failed: {str(exc)}"}), 500
 
 
 @app.post("/api/sentiment/analyze")

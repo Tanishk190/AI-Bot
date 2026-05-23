@@ -3,7 +3,7 @@
 
 A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o**. Features RAG-powered Q&A, OCR, PII extraction, sentiment analysis, and document classification.
 
-**Status:** 🚀 Core features live (AI Chat, PII Extractor, Sentiment Analysis)
+**Status:** 🚀 Core features live (AI Chat, OCR, PII Extractor, Sentiment Analysis)
 
 ---
 
@@ -12,7 +12,7 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
 | 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
-| 2 | 🔍 **OCR** | 📋 Planned | Extract text from images (PNG, JPG, JPEG) |
+| 2 | 🔍 **OCR** | ✅ Working | Extract text from images (PNG, JPG, JPEG) |
 | 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with table output + JSON export |
 | 4 | 📊 **Sentiment Analysis** | ✅ Working | Sentiment, confidence, tone, reasoning |
 | 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
@@ -27,6 +27,7 @@ AI-Bot/
 │   ├── app.py                      # Flask main app with all endpoints (chat, PII, sentiment)
 │   ├── core/
 │   │   ├── llm.py                  # OpenAI GPT-4o wrapper
+│   │   ├── ocr.py                  # OCR pipeline (LightOnOCR-2-1B)
 │   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
 │   │   └── pii.py                  # PII extraction with custom prompts
 │   ├── static/
@@ -135,6 +136,19 @@ Q: Who wrote this?
 ✅ Answers accurately with semantic search
 ```
 
+### 🔍 OCR
+
+**User Flow:**
+1. Upload PNG/JPG/JPEG images
+2. Click "Run OCR"
+3. Text is extracted using LightOnOCR-2-1B
+4. Copy or download the extracted text
+
+**Key Features:**
+- **Model:** lightonai/LightOnOCR-2-1B (Transformers)
+- **Multiple images:** Batch processing supported
+- **Export:** Copy to clipboard or download as TXT
+
 ### 🔐 PII Extractor
 
 **User Flow:**
@@ -185,6 +199,7 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 - ✅ Tested PII extraction end-to-end
 - ✅ Added Sentiment Analysis endpoint + UI (text or document input)
 - ✅ Added LLM JSON parsing helper for structured sentiment output
+- ✅ Implemented OCR endpoint + UI using LightOnOCR-2-1B
 
 **Previous Milestones:**
 - ✅ Migrated from Hugging Face to OpenAI GPT-4o
@@ -236,6 +251,11 @@ k = 3                  # Number of chunks to retrieve
 - Scanned PDFs require OCR first (use the OCR panel)
 - TXT/DOCX files are safest for extraction
 
+**OCR errors**
+- Ensure images are PNG/JPG/JPEG
+- First run downloads the model weights (can take a while)
+- If extraction is blank, check the image quality or contrast
+
 **Slow first load**
 - Sentence-transformers downloads model on first use (~80MB)
 - This only happens once - subsequent loads are cached
@@ -254,13 +274,15 @@ python-dotenv
 PyPDF2
 sentence-transformers
 numpy
+transformers
+torch
+torchvision
 ```
 
 ---
 
 ## Next Steps (TODO)
 
-- [ ] Build OCR feature (EasyOCR + image upload)
 - [ ] Build Document Classifier (cosine similarity + relevance scoring)
 - [ ] Add database persistence (chat history + indexed documents)
 - [ ] Add chat history export (JSON/CSV)

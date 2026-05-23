@@ -620,6 +620,8 @@ input:disabled {
 
 .sent-val.small { font-size: 14px; }
 .sent-val.pos   { color: var(--green); }
+.sent-val.neg   { color: var(--red); }
+.sent-val.neu   { color: var(--gray); }
 
 .meter-wrap { margin: 14px 0; }
 
@@ -646,6 +648,17 @@ input:disabled {
 .meter-fill.positive { background: var(--green); }
 .meter-fill.neutral  { background: var(--gray); }
 .meter-fill.negative { background: var(--red); }
+
+.reasoning-text {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  background: var(--color-background-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
 
 .classifier-criteria {
   margin-bottom: 14px;
