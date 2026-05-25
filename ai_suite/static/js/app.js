@@ -571,7 +571,7 @@ if (sentimentAnalyzeBtn) {
 
 // ── Document Classifier ───────────────────────────────────────────────────────
 const classifyDocuments = document.querySelector('input[name="classifier_documents"]');
-const classifyDocList = document.querySelector(".doc-list");
+const classifyDocList = document.querySelector("#classify-doc-list");
 const classifierCriteria = document.querySelector("#criteria");
 const classifyBtn = document.querySelector(".panel#panel-classify .run-btn") || 
                     document.querySelector("#panel-classify .run-btn");
