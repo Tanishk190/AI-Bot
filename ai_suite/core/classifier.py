@@ -1,12 +1,26 @@
 """Document classifier using semantic similarity and LLM reasoning."""
+import os
 import numpy as np
 
 try:
-    from core.rag import load_documents, _get_embedding, chunk_text
+    from core.rag import load_documents, _get_embedding
     from core.llm import generate_completion, parse_llm_json
 except ModuleNotFoundError:
-    from ai_suite.core.rag import load_documents, _get_embedding, chunk_text
+    from ai_suite.core.rag import load_documents, _get_embedding
     from ai_suite.core.llm import generate_completion, parse_llm_json
+
+
+def _normalize_classification(value: str | None) -> str:
+    if not value:
+        return "UNCERTAIN"
+    normalized = value.strip().upper()
+    normalized = normalized.replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+    if normalized in ("RELEVANT", "UNCERTAIN"):
+        return normalized
+    if normalized in ("NOT RELEVANT", "NOTRELEVANT", "IRRELEVANT", "NON RELEVANT"):
+        return "NOT_RELEVANT"
+    return "UNCERTAIN"
 
 
 def classify_documents(documents, criteria: str) -> list[dict]:
@@ -39,26 +53,28 @@ def classify_documents(documents, criteria: str) -> list[dict]:
     if not valid_docs:
         raise ValueError("No valid documents provided.")
 
-    # Load and chunk all documents
-    all_chunks = load_documents(valid_docs)
-    if not all_chunks:
-        raise ValueError("No readable text found in uploaded documents.")
-
     # Get embedding for criteria
     criteria_embedding = _get_embedding(criteria)
     if criteria_embedding is None:
         raise RuntimeError("Could not embed classification criteria.")
 
-    # Group chunks by source document
-    docs_by_source = {}
-    for chunk in all_chunks:
-        if chunk.source not in docs_by_source:
-            docs_by_source[chunk.source] = []
-        docs_by_source[chunk.source].append(chunk)
-
     results = []
+    for doc in valid_docs:
+        filename = os.path.basename(doc.filename)
+        try:
+            doc.stream.seek(0)
+        except Exception:
+            pass
 
-    for filename, chunks in docs_by_source.items():
+        chunks = load_documents([doc])
+        if not chunks:
+            results.append({
+                "filename": filename,
+                "similarity_score": 0.0,
+                "classification": "UNCERTAIN",
+                "reasoning": "No readable text found in this document. If this is a scanned PDF, run OCR first."
+            })
+            continue
         # Calculate similarity scores for all chunks
         similarities = []
         for chunk in chunks:
@@ -80,8 +96,6 @@ def classify_documents(documents, criteria: str) -> list[dict]:
             })
             continue
 
-        # Average similarity across document
-        avg_similarity = float(np.mean(similarities))
         max_similarity = float(np.max(similarities))
 
         # Get top 3 chunks for LLM reasoning
@@ -106,22 +120,29 @@ def classify_documents(documents, criteria: str) -> list[dict]:
             "Classify this document and provide reasoning."
         )
 
-        try:
-            llm_response = generate_completion(user_prompt, system_prompt=system_prompt)
-            llm_result = parse_llm_json(llm_response)
-            classification = llm_result.get("classification", "UNCERTAIN").upper()
-            reasoning = llm_result.get("reasoning", "No reasoning provided.")
-        except Exception as e:
-            # Fallback to similarity-based classification if LLM fails
-            if max_similarity > 0.7:
-                classification = "RELEVANT"
-                reasoning = f"High semantic similarity ({max_similarity:.2f}) with criteria."
-            elif max_similarity > 0.3:
-                classification = "UNCERTAIN"
-                reasoning = f"Medium semantic similarity ({max_similarity:.2f}) with criteria. Manual review recommended."
-            else:
-                classification = "NOT_RELEVANT"
-                reasoning = f"Low semantic similarity ({max_similarity:.2f}) with criteria."
+        high_threshold = 0.65
+        low_threshold = 0.25
+
+        if max_similarity >= high_threshold:
+            classification = "RELEVANT"
+            reasoning = f"High semantic similarity ({max_similarity:.2f}) with criteria."
+        elif max_similarity <= low_threshold:
+            classification = "NOT_RELEVANT"
+            reasoning = f"Low semantic similarity ({max_similarity:.2f}) with criteria."
+        else:
+            classification = "UNCERTAIN"
+            reasoning = f"Medium semantic similarity ({max_similarity:.2f}) with criteria. Manual review recommended."
+
+            try:
+                llm_response = generate_completion(user_prompt, system_prompt=system_prompt)
+                llm_result = parse_llm_json(llm_response)
+                llm_classification = _normalize_classification(llm_result.get("classification"))
+                llm_reasoning = llm_result.get("reasoning", "No reasoning provided.")
+                if llm_classification != "UNCERTAIN":
+                    classification = llm_classification
+                    reasoning = llm_reasoning
+            except Exception:
+                pass
 
         results.append({
             "filename": filename,

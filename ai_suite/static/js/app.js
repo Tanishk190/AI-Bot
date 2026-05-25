@@ -653,10 +653,14 @@ if (actualClassifyBtn) {
 
           const tag = document.createElement("span");
           tag.className = "doc-tag";
-          if (result.classification === "RELEVANT") {
+          const classification = (result.classification || "")
+            .toUpperCase()
+            .replace(/[-\s]+/g, "_")
+            .trim();
+          if (classification === "RELEVANT") {
             tag.classList.add("tag-rel");
             tag.textContent = "Relevant";
-          } else if (result.classification === "NOT_RELEVANT") {
+          } else if (classification === "NOT_RELEVANT" || classification === "IRRELEVANT") {
             tag.classList.add("tag-nrel");
             tag.textContent = "Not Relevant";
           } else {
@@ -683,4 +687,3 @@ if (actualClassifyBtn) {
     }
   });
 }
-
