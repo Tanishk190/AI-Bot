@@ -568,3 +568,119 @@ if (sentimentAnalyzeBtn) {
     }
   });
 }
+
+// ── Document Classifier ───────────────────────────────────────────────────────
+const classifyDocuments = document.querySelector('input[name="classifier_documents"]');
+const classifyDocList = document.querySelector(".doc-list");
+const classifierCriteria = document.querySelector("#criteria");
+const classifyBtn = document.querySelector(".panel#panel-classify .run-btn") || 
+                    document.querySelector("#panel-classify .run-btn");
+
+if (classifyDocuments) {
+  classifyDocuments.addEventListener("change", () => {
+    const count = classifyDocuments.files.length;
+    if (!classifyDocuments.parentElement) return;
+    const uploadZone = classifyDocuments.parentElement;
+    const statusText = uploadZone.querySelector("strong");
+    if (statusText) {
+      statusText.textContent = count === 0 
+        ? "Upload documents for classification" 
+        : `${count} document${count === 1 ? "" : "s"} selected`;
+    }
+  });
+}
+
+// Find or create classify button if it doesn't exist
+let actualClassifyBtn = classifyBtn;
+if (!actualClassifyBtn) {
+  const panel = document.querySelector("#panel-classify");
+  if (panel) {
+    actualClassifyBtn = document.createElement("button");
+    actualClassifyBtn.className = "run-btn";
+    actualClassifyBtn.textContent = "Classify Documents";
+    actualClassifyBtn.type = "button";
+    
+    const uploadZone = panel.querySelector(".upload-zone.compact");
+    if (uploadZone) {
+      uploadZone.parentElement.insertBefore(actualClassifyBtn, uploadZone.nextSibling);
+    }
+  }
+}
+
+if (actualClassifyBtn) {
+  actualClassifyBtn.addEventListener("click", async () => {
+    if (!classifyDocuments || !classifyDocuments.files.length) {
+      alert("Upload at least one document first.");
+      return;
+    }
+
+    if (!classifierCriteria || !classifierCriteria.value.trim()) {
+      alert("Enter classification criteria first.");
+      return;
+    }
+
+    actualClassifyBtn.disabled = true;
+    actualClassifyBtn.textContent = "Classifying...";
+
+    try {
+      const formData = new FormData();
+      Array.from(classifyDocuments.files).forEach((file) => formData.append("documents", file));
+      formData.append("criteria", classifierCriteria.value.trim());
+
+      const response = await fetch("/api/classify/documents", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await parseJsonResponse(response);
+
+      if (!response.ok) throw new Error(data.error || "Classification failed.");
+
+      // Update doc list with results
+      if (classifyDocList && data.results) {
+        classifyDocList.innerHTML = "";
+        data.results.forEach((result) => {
+          const row = document.createElement("div");
+          row.className = "doc-row";
+
+          const fileIcon = document.createElement("span");
+          fileIcon.className = "file-icon";
+          fileIcon.textContent = "FILE";
+
+          const docName = document.createElement("span");
+          docName.className = "doc-name";
+          docName.title = `Similarity: ${result.similarity_score.toFixed(3)}\nReasoning: ${result.reasoning}`;
+          docName.textContent = result.filename;
+
+          const tag = document.createElement("span");
+          tag.className = "doc-tag";
+          if (result.classification === "RELEVANT") {
+            tag.classList.add("tag-rel");
+            tag.textContent = "Relevant";
+          } else if (result.classification === "NOT_RELEVANT") {
+            tag.classList.add("tag-nrel");
+            tag.textContent = "Not Relevant";
+          } else {
+            tag.classList.add("tag-proc");
+            tag.textContent = "Uncertain";
+          }
+
+          row.append(fileIcon, docName, tag);
+          classifyDocList.append(row);
+        });
+      }
+
+      actualClassifyBtn.textContent = `✓ Classified ${data.total_documents} document${data.total_documents === 1 ? "" : "s"}`;
+      setTimeout(() => {
+        actualClassifyBtn.textContent = "Classify Documents";
+      }, 2000);
+    } catch (error) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      actualClassifyBtn.disabled = false;
+      if (actualClassifyBtn.textContent === "Classifying...") {
+        actualClassifyBtn.textContent = "Classify Documents";
+      }
+    }
+  });
+}
+

@@ -12,11 +12,13 @@ try:
     from core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from core.pii import extract_pii, format_pii_for_display
     from core.ocr import extract_ocr_text
+    from core.classifier import classify_documents
 except ModuleNotFoundError:
     from ai_suite.core.llm import generate_completion, build_rag_prompt, parse_llm_json
     from ai_suite.core.rag import load_documents, retrieve_relevant_chunks, Chunk
     from ai_suite.core.pii import extract_pii, format_pii_for_display
     from ai_suite.core.ocr import extract_ocr_text
+    from ai_suite.core.classifier import classify_documents
 
 
 app = Flask(__name__)
@@ -237,6 +239,8 @@ def sentiment_analyze():
         if not isinstance(sentiment_data, dict):
             raise ValueError("LLM response must be a JSON object.")
 
+            raise ValueError("LLM response must be a JSON object.")
+
         return jsonify({
             **sentiment_data,
             "source": source,
@@ -248,6 +252,36 @@ def sentiment_analyze():
         return jsonify({"error": str(exc)}), 503
     except Exception as exc:
         return jsonify({"error": f"Sentiment analysis failed: {str(exc)}"}), 500
+
+
+@app.post("/api/classify/documents")
+def classify_docs():
+    """Classify documents against user-defined criteria."""
+    documents = request.files.getlist("documents")
+    criteria = (request.form.get("criteria") or "").strip()
+
+    if not documents or not any(d for d in documents if d and d.filename):
+        return jsonify({"error": "Upload at least one document."}), 400
+
+    if not criteria:
+        return jsonify({"error": "Classification criteria is required."}), 400
+
+    try:
+        results = classify_documents(documents, criteria)
+        if not results:
+            return jsonify({"error": "No readable text found in uploaded documents."}), 400
+
+        return jsonify({
+            "criteria": criteria,
+            "results": results,
+            "total_documents": len(results),
+        })
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"error": f"Classification failed: {str(exc)}"}), 500
 
 
 if __name__ == "__main__":
