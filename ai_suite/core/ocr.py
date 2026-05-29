@@ -1,51 +1,17 @@
-"""OCR using LightOnOCR-2-1B via Hugging Face Transformers."""
+"""OCR using GPT-4o Vision."""
 from __future__ import annotations
-
 from typing import Iterable
+import base64
 
-_ocr_model = None
-_ocr_processor = None
-_ocr_device = None
-_ocr_dtype = None
-
-MODEL_ID = "lightonai/LightOnOCR-2-1B"
-
-
-def _load_ocr_model():
-    """Lazy-load OCR model and processor."""
-    global _ocr_model, _ocr_processor, _ocr_device, _ocr_dtype
-
-    if _ocr_model is not None and _ocr_processor is not None:
-        return _ocr_model, _ocr_processor, _ocr_device, _ocr_dtype
-
-    import torch
-    from transformers import LightOnOcrForConditionalGeneration, LightOnOcrProcessor
-
-    if torch.backends.mps.is_available():
-        _ocr_device = "mps"
-        _ocr_dtype = torch.float32
-    elif torch.cuda.is_available():
-        _ocr_device = "cuda"
-        _ocr_dtype = torch.bfloat16
-    else:
-        _ocr_device = "cpu"
-        _ocr_dtype = torch.float32
-
-    _ocr_processor = LightOnOcrProcessor.from_pretrained(MODEL_ID)
-    _ocr_model = LightOnOcrForConditionalGeneration.from_pretrained(
-        MODEL_ID, torch_dtype=_ocr_dtype
-    ).to(_ocr_device)
-    _ocr_model.eval()
-
-    return _ocr_model, _ocr_processor, _ocr_device, _ocr_dtype
+try:
+    from core.llm import initialize_client
+except ModuleNotFoundError:
+    from ai_suite.core.llm import initialize_client
 
 
 def extract_ocr_text(images: Iterable) -> list[dict]:
-    """Extract text from uploaded image files using LightOnOCR-2-1B."""
-    import torch
-    from PIL import Image
-
-    model, processor, device, dtype = _load_ocr_model()
+    """Extract text from uploaded image files using GPT-4o Vision."""
+    client = initialize_client()
     results = []
 
     for file_storage in images:
@@ -57,32 +23,41 @@ def extract_ocr_text(images: Iterable) -> list[dict]:
         except Exception:
             pass
 
-        image = Image.open(file_storage.stream).convert("RGB")
+        try:
+            image_data = base64.b64encode(file_storage.stream.read()).decode("utf-8")
+            filename = file_storage.filename.lower()
 
-        conversation = [
-            {"role": "user", "content": [{"type": "image", "image": image}]}
-        ]
+            if filename.endswith(".png"):
+                mime = "image/png"
+            elif filename.endswith(".jpg") or filename.endswith(".jpeg"):
+                mime = "image/jpeg"
+            elif filename.endswith(".webp"):
+                mime = "image/webp"
+            else:
+                mime = "image/jpeg"  # default
 
-        inputs = processor.apply_chat_template(
-            conversation,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{image_data}"}
+                        },
+                        {
+                            "type": "text",
+                            "text": "Extract all text from this image exactly as it appears. Preserve formatting, layout, and line breaks where possible."
+                        }
+                    ]
+                }],
+                max_tokens=2000
+            )
 
-        inputs = {
-            k: v.to(device=device, dtype=dtype) if v.is_floating_point() else v.to(device)
-            for k, v in inputs.items()
-        }
+            text = response.choices[0].message.content.strip()
+            results.append({"filename": file_storage.filename, "text": text})
 
-        with torch.no_grad():
-            output_ids = model.generate(**inputs, max_new_tokens=1024)
-
-        prompt_len = inputs["input_ids"].shape[1]
-        generated_ids = output_ids[0, prompt_len:]
-        text = processor.decode(generated_ids, skip_special_tokens=True)
-
-        results.append({"filename": file_storage.filename, "text": text})
+        except Exception as e:
+            results.append({"filename": file_storage.filename, "text": "", "error": str(e)})
 
     return results
