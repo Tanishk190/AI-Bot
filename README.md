@@ -52,7 +52,7 @@ AI-Bot/
 | Backend | Flask |
 | Frontend | HTML/CSS/JavaScript |
 | LLM | OpenAI API (GPT-4o) |
-| Retrieval | Semantic search (sentence-transformers all-MiniLM-L6-v2) |
+| Retrieval | Semantic search (OpenAI embeddings) |
 | Chunking | Multi-strategy (paragraph → line → sentence → character) |
 | Document Parsing | PyPDF2, python-docx |
 | Env Management | python-dotenv |
@@ -88,7 +88,7 @@ source venv/bin/activate  # Mac/Linux
 pip install -r requirements.txt
 ```
 
-First-time run will download the sentence-transformers model (~80MB) for semantic search.
+Semantic search uses OpenAI embeddings (requires `OPENAI_API_KEY`).
 
 ### 4. Set up API key
 
@@ -117,7 +117,7 @@ Visit: **http://127.0.0.1:5000**
 **User Flow:**
 1. Upload PDF, TXT, or DOCX files
 2. System extracts text and chunks using smart multi-strategy splitting
-3. Chunks are embedded using sentence-transformers
+3. Chunks are embedded using OpenAI embeddings
 4. User asks a question
 5. System finds semantically similar chunks (not just keyword matching)
 6. GPT-4o answers based only on retrieved context
@@ -203,7 +203,7 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 
 **Previous Milestones:**
 - ✅ Migrated from Hugging Face to OpenAI GPT-4o
-- ✅ Implemented semantic search RAG (sentence-transformers)
+- ✅ Implemented semantic search RAG (OpenAI embeddings)
 - ✅ Multi-strategy document chunking
 - ✅ Flask web interface with real-time indexing
 
@@ -217,6 +217,7 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 
 ```env
 OPENAI_API_KEY=sk-...  # Your OpenAI API key
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small  # Optional (default shown)
 ```
 
 ### Chunking Settings (core/rag.py)
@@ -257,8 +258,7 @@ k = 3                  # Number of chunks to retrieve
 - If extraction is blank, check the image quality or contrast
 
 **Slow first load**
-- Sentence-transformers downloads model on first use (~80MB)
-- This only happens once - subsequent loads are cached
+OpenAI embeddings are called at runtime; ensure network access is available.
 
 ---
 
@@ -272,7 +272,6 @@ pypdf
 Pillow
 python-dotenv
 PyPDF2
-sentence-transformers
 numpy
 transformers
 torch
