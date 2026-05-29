@@ -1,6 +1,7 @@
 Flask
 openai
 python-docx
+pdfplumber
 pypdf
 Pillow
 python-dotenv
@@ -9,6 +10,5 @@ numpy
 transformers>=4.38.0
 torch
 torchvision
-
 
 
