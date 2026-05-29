@@ -5,12 +5,10 @@ pypdf
 Pillow
 python-dotenv
 PyPDF2
-sentence-transformers
 numpy
 transformers>=4.38.0
 torch
 torchvision
-
 
 
 

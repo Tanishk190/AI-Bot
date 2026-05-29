@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import os
 import json
+from openai import OpenAI, APIError, APIConnectionError
 
 
 @dataclass
@@ -12,35 +13,40 @@ class Chunk:
     index: int
 
 
-# Lazy load embeddings only when needed
-_embeddings_model = None
+# Lazy load embeddings client only when needed
+_embeddings_client = None
 _embeddings_cache = {}
+_embedding_model_name = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
-def _get_embeddings_model():
-    """Lazy load sentence-transformers model."""
-    global _embeddings_model
-    if _embeddings_model is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            _embeddings_model = SentenceTransformer('all-MiniLM-L6-v2')
-        except ImportError:
-            print("⚠️  sentence-transformers not installed. Using fallback BM25 retrieval.")
-            _embeddings_model = False
-    return _embeddings_model
+def _get_embeddings_client():
+    """Lazy load OpenAI client for embeddings."""
+    global _embeddings_client
+    if _embeddings_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("Missing OPENAI_API_KEY. Set it to enable embeddings.")
+        _embeddings_client = OpenAI(api_key=api_key)
+    return _embeddings_client
 
 
 def _get_embedding(text: str):
     """Get embedding for text with caching."""
     if text in _embeddings_cache:
         return _embeddings_cache[text]
-    
-    model = _get_embeddings_model()
-    if model is False:
-        return None
-    
-    embedding = model.encode(text, convert_to_tensor=False)
-    _embeddings_cache[text] = embedding
-    return embedding
+
+    try:
+        client = _get_embeddings_client()
+        response = client.embeddings.create(
+            model=_embedding_model_name,
+            input=text,
+        )
+        embedding = response.data[0].embedding
+        _embeddings_cache[text] = embedding
+        return embedding
+    except APIConnectionError as exc:
+        raise RuntimeError(f"Could not connect to OpenAI embeddings API: {str(exc)}") from exc
+    except APIError as exc:
+        raise RuntimeError(f"OpenAI embeddings API error: {str(exc)}") from exc
 
 
 def load_documents(uploaded_files: list) -> list[Chunk]:
@@ -133,29 +139,21 @@ def retrieve_relevant_chunks(
     
     # Try semantic search first
     try:
-        model = _get_embeddings_model()
-        if model and model is not False:
-            import numpy as np
-            
-            question_embedding = _get_embedding(question)
-            if question_embedding is None:
-                raise ValueError("Could not embed question")
-            
-            scored = []
-            for chunk in chunks:
-                chunk_embedding = _get_embedding(chunk.text)
-                if chunk_embedding is None:
-                    continue
-                
-                # Cosine similarity
-                similarity = np.dot(question_embedding, chunk_embedding) / (
-                    np.linalg.norm(question_embedding) * np.linalg.norm(chunk_embedding)
-                )
-                scored.append((chunk, similarity))
-            
-            if scored:
-                scored.sort(key=lambda x: x[1], reverse=True)
-                return [chunk for chunk, _ in scored[:k]]
+        import numpy as np
+
+        question_embedding = _get_embedding(question)
+        scored = []
+        for chunk in chunks:
+            chunk_embedding = _get_embedding(chunk.text)
+            # Cosine similarity
+            similarity = np.dot(question_embedding, chunk_embedding) / (
+                np.linalg.norm(question_embedding) * np.linalg.norm(chunk_embedding)
+            )
+            scored.append((chunk, similarity))
+
+        if scored:
+            scored.sort(key=lambda x: x[1], reverse=True)
+            return [chunk for chunk, _ in scored[:k]]
     except Exception as e:
         print(f"⚠️  Semantic search failed: {e}. Falling back to BM25.")
     
