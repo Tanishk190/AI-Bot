@@ -1,7 +1,7 @@
 """RAG pipeline for document retrieval and chunking."""
 from dataclasses import dataclass
 import os
-import json
+import re
 from openai import OpenAI, APIError, APIConnectionError
 
 
@@ -70,6 +70,27 @@ def load_documents(uploaded_files: list) -> list[Chunk]:
     return chunks
 
 
+def load_chat_documents(uploaded_files: list) -> list[Chunk]:
+    """
+    Load and parse documents for AI chat with section/heading/clause-aware chunking.
+    Supports: TXT, PDF, DOCX
+    """
+    chunks = []
+
+    for file_storage in uploaded_files:
+        if not file_storage or not file_storage.filename:
+            continue
+
+        filename = os.path.basename(file_storage.filename)
+        text = _extract_text(file_storage, filename)
+
+        if text:
+            file_chunks = chunk_text_structured(text, filename)
+            chunks.extend(file_chunks)
+
+    return chunks
+
+
 def chunk_text(text: str, source: str, chunk_size: int = 512, overlap: int = 100) -> list[Chunk]:
     """
     Split text into overlapping chunks using multiple strategies.
@@ -123,6 +144,156 @@ def chunk_text(text: str, source: str, chunk_size: int = 512, overlap: int = 100
         chunks.append(Chunk(source=source, index=idx, text=current.strip()))
     
     return chunks
+
+
+def chunk_text_structured(
+    text: str, source: str, chunk_size: int = 650, overlap: int = 120
+) -> list[Chunk]:
+    """
+    Chunk text using section-aware, heading-aware, and clause-aware logic.
+    Intended for AI chat only.
+    """
+    if not text or not text.strip():
+        return []
+
+    sections = _split_sections(text)
+    chunks = []
+    idx = 1
+
+    for heading, body in sections:
+        if not body:
+            continue
+
+        clauses = _split_clauses(body)
+        current = ""
+
+        for clause in clauses:
+            clause = clause.strip()
+            if not clause:
+                continue
+
+            if len(clause) > chunk_size:
+                if current:
+                    chunks.append(Chunk(source=source, index=idx, text=_format_chunk(heading, current)))
+                    idx += 1
+                    current = ""
+                step = max(chunk_size - overlap, 1)
+                for i in range(0, len(clause), step):
+                    piece = clause[i : i + chunk_size].strip()
+                    if piece:
+                        chunks.append(Chunk(source=source, index=idx, text=_format_chunk(heading, piece)))
+                        idx += 1
+                continue
+
+            if not current:
+                current = clause
+            elif len(current) + len(clause) + 1 <= chunk_size:
+                current = f"{current} {clause}"
+            else:
+                chunks.append(Chunk(source=source, index=idx, text=_format_chunk(heading, current)))
+                idx += 1
+                overlap_text = current[-overlap:].strip()
+                current = f"{overlap_text} {clause}".strip() if overlap_text else clause
+
+        if current:
+            chunks.append(Chunk(source=source, index=idx, text=_format_chunk(heading, current)))
+            idx += 1
+
+    return chunks
+
+
+def _format_chunk(heading: str | None, text: str) -> str:
+    if heading:
+        return f"Section: {heading}\n{text}".strip()
+    return text.strip()
+
+
+def _split_sections(text: str) -> list[tuple[str | None, str]]:
+    lines = text.splitlines()
+    sections = []
+    current_heading = None
+    current_lines: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            current_lines.append("")
+            continue
+
+        if _is_heading(stripped):
+            if current_lines and any(part.strip() for part in current_lines):
+                sections.append((current_heading, "\n".join(current_lines).strip()))
+            current_heading = stripped
+            current_lines = []
+            continue
+
+        current_lines.append(stripped)
+
+    if current_lines and any(part.strip() for part in current_lines):
+        sections.append((current_heading, "\n".join(current_lines).strip()))
+
+    if not sections:
+        return [(None, text.strip())]
+
+    return sections
+
+
+def _is_heading(line: str) -> bool:
+    if len(line) > 140:
+        return False
+
+    heading_patterns = [
+        r"^(section|article)\s+[0-9ivxlcdm]+([.-]\d+)*\b.*",
+        r"^(schedule|appendix|exhibit)\s+[a-z0-9ivxlcdm]+.*",
+        r"^\d+(\.\d+)*\s+[A-Z].{3,}$",
+        r"^[A-Z][A-Z0-9 \-]{4,}$",
+        r"^[A-Z][A-Za-z0-9 ,\-]{0,80}:$",
+    ]
+
+    for pattern in heading_patterns:
+        if re.match(pattern, line.strip(), re.IGNORECASE):
+            return True
+    return False
+
+
+def _split_clauses(text: str) -> list[str]:
+    lines = text.splitlines()
+    clauses = []
+    current = ""
+    clause_marker = re.compile(r"^\s*(\([a-z0-9]+\)|[a-z0-9]+\)|[a-z]\.|[0-9]+\.|[0-9]+\.[0-9]+)\s+",
+                               re.IGNORECASE)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if current:
+                clauses.append(current.strip())
+                current = ""
+            continue
+
+        if clause_marker.match(stripped):
+            if current:
+                clauses.append(current.strip())
+            current = stripped
+        else:
+            current = f"{current} {stripped}".strip() if current else stripped
+
+    if current:
+        clauses.append(current.strip())
+
+    if not clauses:
+        return [text.strip()]
+
+    # Further split long clauses on semicolons
+    refined = []
+    for clause in clauses:
+        if ";" in clause:
+            parts = [p.strip() for p in clause.split(";") if p.strip()]
+            refined.extend(parts)
+        else:
+            refined.append(clause)
+
+    return refined
 
 
 def retrieve_relevant_chunks(

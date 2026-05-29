@@ -1,6 +1,4 @@
 """AI Suite - Document Intelligence Web App with OpenAI GPT-4o."""
-from email.mime import text
-
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 import os
@@ -9,13 +7,13 @@ load_dotenv()
 
 try:
     from core.llm import generate_completion, build_rag_prompt, parse_llm_json
-    from core.rag import load_documents, retrieve_relevant_chunks, Chunk
+    from core.rag import load_documents, load_chat_documents, retrieve_relevant_chunks, Chunk
     from core.pii import extract_pii, format_pii_for_display
     from core.ocr import extract_ocr_text
     from core.classifier import classify_documents
 except ModuleNotFoundError:
     from ai_suite.core.llm import generate_completion, build_rag_prompt, parse_llm_json
-    from ai_suite.core.rag import load_documents, retrieve_relevant_chunks, Chunk
+    from ai_suite.core.rag import load_documents, load_chat_documents, retrieve_relevant_chunks, Chunk
     from ai_suite.core.pii import extract_pii, format_pii_for_display
     from ai_suite.core.ocr import extract_ocr_text
     from ai_suite.core.classifier import classify_documents
@@ -77,7 +75,7 @@ def index_chat_documents():
         return jsonify({"error": "Upload at least one document."}), 400
     
     try:
-        chunks = load_documents(files)
+        chunks = load_chat_documents(files)
         if not chunks:
             return jsonify({"error": "No readable text found in uploaded documents."}), 400
         
