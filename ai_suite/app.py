@@ -172,16 +172,20 @@ def ocr_extract():
         if not results:
             return jsonify({"error": "No readable text found in uploaded images."}), 400
 
+        errors = [item.get("error") for item in results if item.get("error")]
         combined_text = "\n\n".join(
             f"{item['filename']}\n{item['text']}".strip() for item in results if item.get("text")
         ).strip()
 
         if not combined_text:
+            if errors:
+                return jsonify({"error": f"OCR failed: {errors[0]}"}), 503
             return jsonify({"error": "No readable text found in uploaded images."}), 400
 
         return jsonify({
             "text": combined_text,
             "results": results,
+            "errors": errors,
         })
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
