@@ -46,12 +46,14 @@ def build_rag_prompt(question: str, context_blocks: list[str]) -> tuple[str, str
     """Build system and user prompts for RAG."""
     context = "\n\n".join(context_blocks).strip()
     system_prompt = (
-        "You are an AI assistant for document question answering. "
-        "Use only the provided context from the uploaded documents. "
-        "If the user asks what the document is about, summarize the main topic and key points from the context, "
-        "and give the answer in point form. "
-        "If the answer is not supported by the context, say: I could not find it in the uploaded documents."
-    )
+    "You are an AI assistant for document question answering. "
+    "Use only the provided context from the uploaded documents. "
+    "Structure your response as:\n"
+    "Answer: <your answer>\n\n"
+    "Sources: <filename> | Section: <section> | Chunk #<chunk number>\n\n"
+    "If the answer requires calculating a difference between two dates or numbers found in the context, compute it and state the result. "
+    "If the answer is not in the context, say: I could not find it in the uploaded documents."
+)
     user_prompt = (
         f"Context:\n{context}\n\n"
         f"Question:\n{question}\n\n"
