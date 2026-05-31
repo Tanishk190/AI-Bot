@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DocuMind — Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <style>
+      .login-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background: var(--color-background-page);
+      }
+      .login-card {
+        background: var(--color-background-primary);
+        border: 1px solid var(--color-border-secondary);
+        border-radius: var(--border-radius-lg);
+        padding: 40px 36px;
+        width: 100%;
+        max-width: 380px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.06);
+      }
+      .login-card h1 {
+        font-size: 22px;
+        margin-bottom: 6px;
+        color: var(--color-text-primary);
+      }
+      .login-card p {
+        font-size: 13px;
+        color: var(--color-text-secondary);
+        margin-bottom: 24px;
+      }
+      .login-card input[type="password"] {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: var(--border-radius-md);
+        font-size: 14px;
+        margin-bottom: 16px;
+        font-family: var(--font-sans);
+      }
+      .login-card button {
+        width: 100%;
+        padding: 10px;
+        background: var(--blue);
+        color: #fff;
+        border: none;
+        border-radius: var(--border-radius-md);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: var(--font-sans);
+      }
+      .login-card button:hover { opacity: .9; }
+      .login-error {
+        background: #fef2f0;
+        color: var(--red);
+        font-size: 13px;
+        padding: 8px 12px;
+        border-radius: var(--border-radius-md);
+        margin-bottom: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-wrap">
+      <form class="login-card" method="post" action="{{ url_for('login') }}">
+        <h1>DocuMind</h1>
+        <p>Enter the access password to continue.</p>
+        {% if error %}
+          <div class="login-error">{{ error }}</div>
+        {% endif %}
+        <input type="password" name="password" placeholder="Password" autofocus required>
+        <button type="submit">Sign in</button>
+      </form>
+    </div>
+  </body>
+</html>

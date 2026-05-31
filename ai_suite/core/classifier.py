@@ -23,7 +23,7 @@ def _normalize_classification(value: str | None) -> str:
     return "UNCERTAIN"
 
 
-def classify_documents(documents, criteria: str) -> list[dict]:
+def classify_documents(documents, criteria: str, low_threshold: float = 0.25, high_threshold: float = 0.65) -> list[dict]:
     """
     Classify uploaded documents against user-defined criteria.
 
@@ -119,9 +119,6 @@ def classify_documents(documents, criteria: str) -> list[dict]:
             f"Semantic similarity score: {max_similarity:.2f}\n\n"
             "Classify this document and provide reasoning."
         )
-
-        high_threshold = 0.65
-        low_threshold = 0.25
 
         if max_similarity >= high_threshold:
             classification = "RELEVANT"

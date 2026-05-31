@@ -1,3 +1,16 @@
+// ── Consent banner ───────────────────────────────────────────────────────────
+const consentBanner = document.querySelector("#consent-banner");
+const consentAccept = document.querySelector("#consent-accept");
+if (consentBanner && !localStorage.getItem("docuMindConsent")) {
+  consentBanner.hidden = false;
+}
+if (consentAccept) {
+  consentAccept.addEventListener("click", () => {
+    localStorage.setItem("docuMindConsent", "1");
+    consentBanner.hidden = true;
+  });
+}
+
 // ── Panel navigation ──────────────────────────────────────────────────────────
 const panels    = document.querySelectorAll(".panel");
 const navItems  = document.querySelectorAll(".nav-item");
@@ -84,13 +97,148 @@ const chatForm        = document.querySelector("#chat-form");
 const chatInput       = document.querySelector("#chat-input");
 
 let indexedDocCount = 0;
+const kbDocItems    = document.querySelector("#kb-doc-items");
+const kbNoDocs      = document.querySelector("#kb-no-docs");
+const kbSelectAll   = document.querySelector("#kb-select-all");
+const kbSelectWrap  = document.querySelector("#kb-select-all-wrap");
 
 function setChatStatus(message, state = "muted") {
   chatIndexStatus.textContent = message;
   chatIndexStatus.dataset.state = state;
 }
 
-function appendMessage(role, text) {
+// ── Document list ────────────────────────────────────────────────────────────
+let kbDocData = [];
+
+async function loadDocumentList() {
+  try {
+    const response = await fetch("/api/chat/documents");
+    const data = await response.json();
+    kbDocData = data.documents || [];
+    renderDocumentList();
+  } catch (e) {
+    console.error("Failed to load documents:", e);
+  }
+}
+
+function renderDocumentList() {
+  if (!kbDocItems) return;
+  kbDocItems.innerHTML = "";
+
+  if (!kbDocData.length) {
+    kbDocItems.innerHTML = '<div class="table-empty">No documents indexed yet.</div>';
+    if (kbSelectWrap) kbSelectWrap.hidden = true;
+    updateKbBadge(0);
+    return;
+  }
+
+  if (kbSelectWrap) kbSelectWrap.hidden = false;
+  updateKbBadge(kbDocData.length);
+
+  kbDocData.forEach((doc) => {
+    const item = document.createElement("div");
+    item.className = "kb-doc-item";
+
+    const label = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true;
+    cb.value = doc.id;
+    cb.className = "kb-doc-cb";
+
+    const name = document.createElement("span");
+    name.className = "doc-filename";
+    name.textContent = doc.filename;
+    name.title = doc.filename;
+
+    const chunks = document.createElement("span");
+    chunks.className = "doc-chunks";
+    chunks.textContent = `${doc.chunk_count} chunks`;
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "kb-doc-del";
+    delBtn.textContent = "×";
+    delBtn.title = "Remove document";
+    delBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      delBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/chat/documents/${doc.id}`, { method: "DELETE" });
+        if (res.ok) await loadDocumentList();
+      } catch (err) {
+        console.error("Delete failed:", err);
+      }
+    });
+
+    label.append(cb, name);
+    item.append(label, chunks, delBtn);
+    kbDocItems.append(item);
+  });
+}
+
+function getSelectedDocumentIds() {
+  if (!kbDocItems) return null;
+  const checkboxes = kbDocItems.querySelectorAll(".kb-doc-cb");
+  if (!checkboxes.length) return null;
+  const allChecked = Array.from(checkboxes).every((cb) => cb.checked);
+  if (allChecked) return null; // null = search all
+  const selected = Array.from(checkboxes)
+    .filter((cb) => cb.checked)
+    .map((cb) => parseInt(cb.value, 10));
+  return selected.length ? selected : null;
+}
+
+if (kbSelectAll) {
+  kbSelectAll.addEventListener("change", () => {
+    const checkboxes = kbDocItems.querySelectorAll(".kb-doc-cb");
+    checkboxes.forEach((cb) => { cb.checked = kbSelectAll.checked; });
+  });
+}
+
+// Load documents on page load
+loadDocumentList();
+
+// ── Markdown renderer ────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  if (!text) return "";
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="md-code"><code>$2</code></pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="md-inline">$1</code>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  // Headers (##)
+  html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
+  html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
+
+  // Unordered lists
+  html = html.replace(/(^|\n)(- .+(?:\n- .+)*)/g, (_, pre, block) => {
+    const items = block.split("\n").map((l) => `<li>${l.replace(/^- /, "")}</li>`).join("");
+    return `${pre}<ul>${items}</ul>`;
+  });
+  // Ordered lists
+  html = html.replace(/(^|\n)(\d+\. .+(?:\n\d+\. .+)*)/g, (_, pre, block) => {
+    const items = block.split("\n").map((l) => `<li>${l.replace(/^\d+\. /, "")}</li>`).join("");
+    return `${pre}<ol>${items}</ol>`;
+  });
+
+  // Line breaks (but not inside lists/pre)
+  html = html.replace(/\n/g, "<br>");
+  // Clean up double breaks from block elements
+  html = html.replace(/<br><(ul|ol|pre|div)/g, "<$1");
+  html = html.replace(/<\/(ul|ol|pre|div)><br>/g, "</$1>");
+
+  return html;
+}
+
+function appendMessage(role, text, sources) {
   const row = document.createElement("div");
   row.className = role === "user" ? "msg user" : "msg";
 
@@ -100,13 +248,53 @@ function appendMessage(role, text) {
 
   const bubble = document.createElement("div");
   bubble.className = role === "user" ? "bubble usr" : "bubble ai";
-  bubble.textContent = text;
+
+  if (role === "user") {
+    bubble.textContent = text;
+  } else {
+    bubble.innerHTML = renderMarkdown(text);
+  }
 
   row.append(avatar, bubble);
+
+  // Sources pill row
+  if (sources && sources.length && role !== "user") {
+    const srcRow = document.createElement("div");
+    srcRow.className = "source-row";
+    sources.forEach((s) => {
+      const pill = document.createElement("span");
+      pill.className = "source-pill";
+      pill.textContent = `${s.source} #${s.chunk}`;
+      srcRow.append(pill);
+    });
+    bubble.append(srcRow);
+  }
+
   chatHistory.append(row);
   chatHistory.scrollTop = chatHistory.scrollHeight;
   return bubble;
 }
+
+// ── Load chat history from DB ────────────────────────────────────────────────
+async function loadChatHistory() {
+  try {
+    const response = await fetch("/api/chat/history");
+    const data = await response.json();
+    if (!data.messages || !data.messages.length) return;
+
+    // Clear the default welcome message
+    if (chatHistory) chatHistory.innerHTML = "";
+
+    data.messages.forEach((msg) => {
+      const role = msg.role === "assistant" ? "ai" : "user";
+      appendMessage(role, msg.content, msg.sources);
+    });
+  } catch (e) {
+    console.error("Failed to load chat history:", e);
+  }
+}
+
+loadChatHistory();
 
 if (chatDocuments) {
   chatDocuments.addEventListener("change", () => {
@@ -141,12 +329,15 @@ if (chatIndexButton) {
       const filenames = data.files.map((f) => f.name).join(", ");
       setChatStatus(`Indexed ${data.total_chunks} chunks from ${filenames}.`, "success");
 
-      // Update badge and close dropdown after successful index
-      indexedDocCount += data.files.length;
-      updateKbBadge(indexedDocCount);
+      // Refresh document list and close dropdown after successful index
+      await loadDocumentList();
       setTimeout(closeKbDropdown, 800);
 
-      appendMessage("ai", "Documents indexed. Ask me anything and I will answer from the retrieved context.");
+      let msg = "Documents indexed. Ask me anything and I will answer from the retrieved context.";
+      if (data.warnings && data.warnings.length) {
+        msg += "\n\n⚠️ " + data.warnings.join("\n⚠️ ");
+      }
+      appendMessage("ai", msg);
     } catch (error) {
       setChatStatus(error.message, "error");
     } finally {
@@ -167,15 +358,31 @@ if (chatForm) {
     const pendingBubble = appendMessage("ai", "Searching documents...");
 
     try {
+      const body = { message };
+      const selectedIds = getSelectedDocumentIds();
+      if (selectedIds) body.document_ids = selectedIds;
+
       const response = await fetch("/api/chat/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(body),
       });
       const data = await response.json();
 
       if (!response.ok) throw new Error(data.error || "Chat request failed.");
-      pendingBubble.textContent = data.answer || "No answer returned.";
+      // Re-render with markdown and sources
+      pendingBubble.innerHTML = renderMarkdown(data.answer || "No answer returned.");
+      if (data.sources && data.sources.length) {
+        const srcRow = document.createElement("div");
+        srcRow.className = "source-row";
+        data.sources.forEach((s) => {
+          const pill = document.createElement("span");
+          pill.className = "source-pill";
+          pill.textContent = `${s.source} #${s.chunk}`;
+          srcRow.append(pill);
+        });
+        pendingBubble.append(srcRow);
+      }
     } catch (error) {
       pendingBubble.textContent = error.message;
     } finally {
@@ -554,8 +761,10 @@ if (sentimentAnalyzeBtn) {
       if (negativePercent) negativePercent.textContent = (sentiment === "Negative" ? confidence : 10) + "%";
 
       if (sentimentStatus) {
-        sentimentStatus.textContent = `Analyzed from: ${data.source} · ${data.char_count} characters`;
-        sentimentStatus.dataset.state = "success";
+        let statusMsg = `Analyzed from: ${data.source} · ${data.char_count} characters`;
+        if (data.warning) statusMsg += ` · ⚠️ ${data.warning}`;
+        sentimentStatus.textContent = statusMsg;
+        sentimentStatus.dataset.state = data.warning ? "warning" : "success";
       }
     } catch (error) {
       if (sentimentStatus) {

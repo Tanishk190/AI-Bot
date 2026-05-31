@@ -1,8 +1,19 @@
 """RAG pipeline for document retrieval and chunking."""
 from dataclasses import dataclass
+import hashlib
+import json
 import os
 import re
 from openai import OpenAI, APIError, APIConnectionError
+
+try:
+    from core.database import (
+        get_embedding_by_hash, update_chunk_embedding, get_chunks_by_session,
+    )
+except ModuleNotFoundError:
+    from ai_suite.core.database import (
+        get_embedding_by_hash, update_chunk_embedding, get_chunks_by_session,
+    )
 
 
 @dataclass
@@ -13,7 +24,6 @@ class Chunk:
 
 
 _embeddings_client = None
-_embeddings_cache = {}
 _embedding_model_name = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
 
@@ -27,20 +37,92 @@ def _get_embeddings_client():
     return _embeddings_client
 
 
-def _get_embedding(text: str):
-    if text in _embeddings_cache:
-        return _embeddings_cache[text]
+def _text_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _get_embedding(text: str) -> list[float]:
+    h = _text_hash(text)
+    cached = get_embedding_by_hash(h)
+    if cached is not None:
+        return cached
+
     try:
         client = _get_embeddings_client()
         response = client.embeddings.create(model=_embedding_model_name, input=text)
         embedding = response.data[0].embedding
-        _embeddings_cache[text] = embedding
+        update_chunk_embedding(h, embedding)
         return embedding
     except APIConnectionError as exc:
         raise RuntimeError(f"Could not connect to OpenAI embeddings API: {str(exc)}") from exc
     except APIError as exc:
         raise RuntimeError(f"OpenAI embeddings API error: {str(exc)}") from exc
 
+
+def embed_session_chunks(session_db_id: int):
+    """Compute and store embeddings for all chunks in a session that don't have one yet."""
+    chunk_rows = get_chunks_by_session(session_db_id)
+    for row in chunk_rows:
+        if row["embedding"] is None:
+            _get_embedding(row["text"])
+
+
+def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 3,
+                                document_ids: list[int] | None = None) -> list[Chunk]:
+    """Retrieve relevant chunks using cosine similarity from DB-stored embeddings."""
+    chunk_rows = get_chunks_by_session(session_db_id, document_ids=document_ids)
+    if not chunk_rows:
+        return []
+
+    try:
+        import numpy as np
+        question_embedding = _get_embedding(question)
+        q_vec = np.array(question_embedding)
+        q_norm = np.linalg.norm(q_vec)
+
+        scored = []
+        query_words = set(question.lower().split())
+
+        for row in chunk_rows:
+            emb = row["embedding"]
+            if emb is None:
+                continue
+            if isinstance(emb, str):
+                emb = json.loads(emb)
+            c_vec = np.array(emb)
+            similarity = float(np.dot(q_vec, c_vec) / (q_norm * np.linalg.norm(c_vec)))
+
+            chunk_words = set(row["text"].lower().split())
+            keyword_boost = 0.1 if query_words & chunk_words else 0
+            scored.append((row, similarity + keyword_boost))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [
+            Chunk(text=row["text"], source=row["source"], index=row["chunk_index"])
+            for row, _ in scored[:k]
+        ]
+    except Exception as e:
+        print(f"Semantic search failed: {e}. Falling back to BM25.")
+
+    return _bm25_retrieval_db(question, chunk_rows, k)
+
+
+def _bm25_retrieval_db(question: str, chunk_rows: list[dict], k: int) -> list[Chunk]:
+    query_words = set(question.lower().split())
+    scored = []
+    for row in chunk_rows:
+        chunk_words = set(row["text"].lower().split())
+        overlap = len(query_words & chunk_words)
+        if overlap > 0:
+            scored.append((row, overlap))
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [
+        Chunk(text=row["text"], source=row["source"], index=row["chunk_index"])
+        for row, _ in scored[:k]
+    ]
+
+
+# ── Document loading (unchanged) ─────────────────────────────────────────────
 
 def load_documents(uploaded_files: list) -> list[Chunk]:
     chunks = []
@@ -124,7 +206,6 @@ def chunk_text_structured(
         if not body:
             continue
 
-        # Keep table-like blocks atomic
         if _is_table_block(body):
             chunks.append(Chunk(source=source, index=idx, text=_format_chunk(heading, body)))
             idx += 1
@@ -278,6 +359,8 @@ def _split_clauses(text: str) -> list[str]:
     return refined
 
 
+# ── In-memory retrieval (used by classifier with ephemeral chunks) ────────────
+
 def retrieve_relevant_chunks(question: str, chunks: list[Chunk], k: int = 3) -> list[Chunk]:
     if not chunks:
         return []
@@ -291,7 +374,6 @@ def retrieve_relevant_chunks(question: str, chunks: list[Chunk], k: int = 3) -> 
             similarity = np.dot(question_embedding, chunk_embedding) / (
                 np.linalg.norm(question_embedding) * np.linalg.norm(chunk_embedding)
             )
-            # boost if query words appear in chunk
             query_words = set(question.lower().split())
             chunk_words = set(chunk.text.lower().split())
             keyword_boost = 0.1 if query_words & chunk_words else 0
@@ -300,7 +382,7 @@ def retrieve_relevant_chunks(question: str, chunks: list[Chunk], k: int = 3) -> 
         scored.sort(key=lambda x: x[1], reverse=True)
         return [chunk for chunk, _ in scored[:k]]
     except Exception as e:
-        print(f"⚠️  Semantic search failed: {e}. Falling back to BM25.")
+        print(f"Semantic search failed: {e}. Falling back to BM25.")
 
     return _bm25_retrieval(question, chunks, k)
 
@@ -316,6 +398,8 @@ def _bm25_retrieval(question: str, chunks: list[Chunk], k: int) -> list[Chunk]:
     scored.sort(key=lambda x: x[1], reverse=True)
     return [chunk for chunk, _ in scored[:k]]
 
+
+# ── Text extraction (unchanged) ──────────────────────────────────────────────
 
 def _extract_text(file_storage, filename: str) -> str:
     try:
@@ -333,7 +417,7 @@ def _extract_text(file_storage, filename: str) -> str:
 def _extract_pdf(file_storage) -> str:
     text = ""
     try:
-        import      pdfplumber
+        import pdfplumber
         try:
             file_storage.stream.seek(0)
         except Exception:

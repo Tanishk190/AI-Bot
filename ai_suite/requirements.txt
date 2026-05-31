@@ -7,8 +7,4 @@ Pillow
 python-dotenv
 PyPDF2
 numpy
-transformers>=4.38.0
-torch
-torchvision
-
-
+psycopg2-binary

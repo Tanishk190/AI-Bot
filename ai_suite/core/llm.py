@@ -4,25 +4,23 @@ import os
 from openai import OpenAI, APIError, APIConnectionError
 
 
+_client = None
+
+
 def initialize_client():
-    api_key = os.getenv("OPENAI_API_KEY")  # read here
-    if not api_key:
-        raise RuntimeError("Missing OPENAI_API_KEY...")
-    return OpenAI(api_key=api_key)
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("Missing OPENAI_API_KEY...")
+        _client = OpenAI(api_key=api_key)
+    return _client
+
+
 DEFAULT_MODEL = "gpt-4o"
 
 
 def generate_completion(prompt: str, model: str = DEFAULT_MODEL, system_prompt: str = None) -> str:
-    """
-    Generate completion using OpenAI GPT-4o.
-    
-    Args:
-        prompt: The prompt text
-        model: Model name (default: gpt-4o)
-    
-    Returns:
-        Generated text response
-    """
     try:
         client = initialize_client()
         system_message = system_prompt or "You are a helpful AI assistant for document analysis."
@@ -34,6 +32,26 @@ def generate_completion(prompt: str, model: str = DEFAULT_MODEL, system_prompt: 
             ],
             temperature=0.2,
             max_tokens=1000,
+        )
+        return response.choices[0].message.content.strip()
+    except APIConnectionError as exc:
+        raise RuntimeError(f"Could not connect to OpenAI API: {str(exc)}") from exc
+    except APIError as exc:
+        raise RuntimeError(f"OpenAI API error: {str(exc)}") from exc
+
+
+def generate_chat_completion(messages: list[dict], model: str = DEFAULT_MODEL,
+                             system_prompt: str = None) -> str:
+    """Generate completion with full message history for multi-turn conversation."""
+    try:
+        client = initialize_client()
+        system_message = system_prompt or "You are a helpful AI assistant for document analysis."
+        full_messages = [{"role": "system", "content": system_message}] + messages
+        response = client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            temperature=0.2,
+            max_tokens=2000,
         )
         return response.choices[0].message.content.strip()
     except APIConnectionError as exc:

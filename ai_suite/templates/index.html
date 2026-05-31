@@ -7,6 +7,17 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   </head>
   <body>
+    <!-- Data privacy consent banner -->
+    <div class="consent-banner" id="consent-banner" hidden>
+      <div class="consent-inner">
+        <strong>Data Privacy Notice</strong>
+        <p>All documents and text submitted through this app are sent to the OpenAI API for processing. Do not upload files containing data you are not authorized to share with a third-party AI service. By continuing, you acknowledge this.</p>
+        <div class="consent-actions">
+          <button type="button" id="consent-accept">I understand, continue</button>
+        </div>
+      </div>
+    </div>
+
     <main class="app-shell" aria-label="AI Suite">
       <aside class="sidebar">
         <div class="sidebar-header">
@@ -56,6 +67,16 @@
                   </label>
                   <button class="run-btn" id="chat-index-btn" type="button">Index documents</button>
                   <div class="status-line" id="chat-index-status">No documents indexed yet.</div>
+
+                  <div class="kb-doc-list" id="kb-doc-list">
+                    <div class="section-label" style="margin-top:12px;">Indexed Documents</div>
+                    <div class="kb-doc-select-all" id="kb-select-all-wrap" hidden>
+                      <label><input type="checkbox" id="kb-select-all" checked> Select all</label>
+                    </div>
+                    <div id="kb-doc-items" class="kb-doc-items">
+                      <div class="table-empty" id="kb-no-docs">No documents indexed yet.</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
