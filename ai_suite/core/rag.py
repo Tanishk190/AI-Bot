@@ -66,7 +66,7 @@ def load_chat_documents(uploaded_files: list) -> list[Chunk]:
     return chunks
 
 
-def chunk_text(text: str, source: str, chunk_size: int = 500, overlap: int = 85) -> list[Chunk]:
+def chunk_text(text: str, source: str, chunk_size: int = 600, overlap: int = 110) -> list[Chunk]:
     if not text or not text.strip():
         return []
 
@@ -111,7 +111,7 @@ def chunk_text(text: str, source: str, chunk_size: int = 500, overlap: int = 85)
 
 
 def chunk_text_structured(
-    text: str, source: str, chunk_size: int = 500, overlap: int = 85
+    text: str, source: str, chunk_size: int = 600, overlap: int = 110
 ) -> list[Chunk]:
     if not text or not text.strip():
         return []

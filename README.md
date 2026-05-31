@@ -15,7 +15,7 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 | 2 | 🔍 **OCR** | ✅ Working | Extract text from images (PNG, JPG, JPEG) |
 | 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with table output + JSON export |
 | 4 | 📊 **Sentiment Analysis** | ✅ Working | Sentiment, confidence, tone, reasoning |
-| 5 | 📁 **Document Classifier** | 📋 Planned | Classify as Relevant / Not Relevant / Uncertain |
+| 5 | 📁 **Document Classifier** | ✅ Working | Classify as Relevant / Not Relevant / Uncertain |
 
 ---
 
@@ -28,8 +28,9 @@ AI-Bot/
 │   ├── core/
 │   │   ├── llm.py                  # OpenAI GPT-4o wrapper
 │   │   ├── ocr.py                  # OCR pipeline (LightOnOCR-2-1B)
-│   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval)
+│   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval + chunking)
 │   │   └── pii.py                  # PII extraction with custom prompts
+│   │   └── classifier.py           # Document classifier (relevance scoring)
 │   ├── static/
 │   │   ├── css/app.css             # Styling with PII editor section
 │   │   └── js/app.js               # Client-side logic (chat + PII + sentiment handlers)
@@ -53,8 +54,8 @@ AI-Bot/
 | Frontend | HTML/CSS/JavaScript |
 | LLM | OpenAI API (GPT-4o) |
 | Retrieval | Semantic search (OpenAI embeddings) |
-| Chunking | Multi-strategy (paragraph → line → sentence → character) |
-| Document Parsing | PyPDF2, python-docx |
+| Chunking | Structured (section/heading/clause) + fallback splitting |
+| Document Parsing | pdfplumber, PyPDF2, pypdf, python-docx |
 | Env Management | python-dotenv |
 
 ---
@@ -116,7 +117,7 @@ Visit: **http://127.0.0.1:5000**
 
 **User Flow:**
 1. Upload PDF, TXT, or DOCX files
-2. System extracts text and chunks using smart multi-strategy splitting
+2. System extracts text and chunks using section/heading/clause-aware logic (chat only)
 3. Chunks are embedded using OpenAI embeddings
 4. User asks a question
 5. System finds semantically similar chunks (not just keyword matching)
@@ -124,7 +125,8 @@ Visit: **http://127.0.0.1:5000**
 
 **Key Features:**
 - **Semantic Search:** Understands meaning, not just keywords ("author" ≈ "writer")
-- **Smart Chunking:** Paragraph → Line → Sentence → Character fallbacks
+- **Smart Chunking:** Section/Heading/Clause-aware, with safe fallbacks
+- **Chunk Size:** 500 characters with 17% overlap (85 chars)
 - **Retrieval Quality:** Top-3 chunks with highest semantic similarity
 - **Context Window:** Only provides relevant context to GPT-4o
 
@@ -148,6 +150,19 @@ Q: Who wrote this?
 - **Model:** lightonai/LightOnOCR-2-1B (Transformers)
 - **Multiple images:** Batch processing supported
 - **Export:** Copy to clipboard or download as TXT
+- **Error handling:** Returns OCR failure details if extraction fails
+
+### 📁 Document Classifier
+
+**User Flow:**
+1. Enter relevance criteria
+2. Upload PDF/TXT/DOCX documents
+3. Classify into Relevant / Not Relevant / Uncertain
+
+**Key Features:**
+- **Per-file classification:** Each document processed independently
+- **Reasoning included:** Similarity-based rationale with LLM refinement for mid-range scores
+- **Fallbacks:** Unreadable docs marked Uncertain with OCR hint
 
 ### 🔐 PII Extractor
 
@@ -191,15 +206,13 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 
 ## Current Development
 
-**Recent Changes (May 21, 2026):**
-- ✅ Built PII Extractor with editable system/user prompts
-- ✅ Added JSON parsing with markdown code fence handling
-- ✅ Removed token tracking feature (simplified API)
-- ✅ Fixed Flask import errors and unpacking bugs
-- ✅ Tested PII extraction end-to-end
-- ✅ Added Sentiment Analysis endpoint + UI (text or document input)
-- ✅ Added LLM JSON parsing helper for structured sentiment output
-- ✅ Implemented OCR endpoint + UI using LightOnOCR-2-1B
+**Recent Changes (May 29, 2026):**
+- ✅ Switched embeddings to OpenAI (configurable model)
+- ✅ Added structured chunking for AI Chat (section/heading/clause aware)
+- ✅ Updated chunk size to 500 with 17% overlap
+- ✅ Improved table extraction for PDF/DOCX (pdfplumber + table blocks)
+- ✅ Added Document Classifier feature (Relevant / Not Relevant / Uncertain)
+- ✅ Improved OCR error reporting with server-side failures surfaced
 
 **Previous Milestones:**
 - ✅ Migrated from Hugging Face to OpenAI GPT-4o
@@ -223,8 +236,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small  # Optional (default shown)
 ### Chunking Settings (core/rag.py)
 
 ```python
-chunk_size = 512       # Characters per chunk
-overlap = 100          # Overlap between chunks for context
+chunk_size = 600       # Characters per chunk
+overlap = 110          # ~18% overlap between chunks
 ```
 
 ### Retrieval Settings (core/rag.py)
@@ -256,6 +269,7 @@ k = 3                  # Number of chunks to retrieve
 - Ensure images are PNG/JPG/JPEG
 - First run downloads the model weights (can take a while)
 - If extraction is blank, check the image quality or contrast
+- If OCR fails for all images, the API returns a 503 with the failure message
 
 **Slow first load**
 OpenAI embeddings are called at runtime; ensure network access is available.
@@ -268,6 +282,7 @@ OpenAI embeddings are called at runtime; ensure network access is available.
 Flask
 openai
 python-docx
+pdfplumber
 pypdf
 Pillow
 python-dotenv
@@ -282,7 +297,6 @@ torchvision
 
 ## Next Steps (TODO)
 
-- [ ] Build Document Classifier (cosine similarity + relevance scoring)
 - [ ] Add database persistence (chat history + indexed documents)
 - [ ] Add chat history export (JSON/CSV)
 - [ ] Deploy to production (Heroku/Railway)

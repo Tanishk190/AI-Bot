@@ -33,3 +33,6 @@ Thumbs.db
 *.bak
 *~
 .env
+
+# Claude Code
+CLAUDE.md
