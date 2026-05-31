@@ -1,9 +1,9 @@
-# DocuMind🤖
+# DocuMind 🤖
 > Knovos Internship Project | Tanishk | May 2026
 
-A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o**. Features RAG-powered Q&A, OCR, PII extraction, sentiment analysis, and document classification.
+A multi-feature AI-powered document intelligence web app built with **Flask + OpenAI GPT-4o + PostgreSQL**. Features RAG-powered Q&A with multi-turn context, OCR, PII extraction, sentiment analysis, and document classification — with full database persistence and authentication.
 
-**Status:** 🚀 Core features live (AI Chat, OCR, PII Extractor, Sentiment Analysis)
+**Status:** 🚀 All 5 features live and production-ready
 
 ---
 
@@ -11,35 +11,38 @@ A multi-feature AI-powered document intelligence web app built with **Flask + Op
 
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
-| 1 | 💬 **AI Chat** | ✅ Working | Semantic search RAG over PDF, TXT, DOCX with GPT-4o |
-| 2 | 🔍 **OCR** | ✅ Working | Extract text from images (PNG, JPG, JPEG) |
+| 1 | 💬 **AI Chat** | ✅ Working | Multi-turn RAG over PDF, TXT, DOCX — markdown rendering, source citations |
+| 2 | 🔍 **OCR** | ✅ Working | Extract text from images (PNG, JPG, JPEG) via GPT-4o Vision |
 | 3 | 🔐 **PII Extractor** | ✅ Working | Custom-prompt PII detection with table output + JSON export |
-| 4 | 📊 **Sentiment Analysis** | ✅ Working | Sentiment, confidence, tone, reasoning |
-| 5 | 📁 **Document Classifier** | ✅ Working | Classify as Relevant / Not Relevant / Uncertain |
+| 4 | 📊 **Sentiment Analysis** | ✅ Working | Sentiment, confidence, tone, reasoning — legal/eDiscovery focused |
+| 5 | 📁 **Document Classifier** | ✅ Working | Classify as Relevant / Not Relevant / Uncertain with reasoning |
 
 ---
 
 ## Project Structure
 
 ```
-AI-Bot/
+DocuMind/
 ├── ai_suite/
-│   ├── app.py                      # Flask main app with all endpoints (chat, PII, sentiment)
+│   ├── app.py                      # Flask app — all routes and endpoints
+│   ├── schema.sql                  # PostgreSQL schema (run once to initialise)
 │   ├── core/
-│   │   ├── llm.py                  # OpenAI GPT-4o wrapper
-│   │   ├── ocr.py                  # OCR pipeline (LightOnOCR-2-1B)
-│   │   ├── rag.py                  # Semantic RAG pipeline (embeddings + retrieval + chunking)
-│   │   └── pii.py                  # PII extraction with custom prompts
-│   │   └── classifier.py           # Document classifier (relevance scoring)
+│   │   ├── database.py             # PostgreSQL layer (connection pool, CRUD)
+│   │   ├── llm.py                  # OpenAI GPT-4o wrapper (singleton client)
+│   │   ├── rag.py                  # RAG pipeline — chunking, embeddings, retrieval
+│   │   ├── pii.py                  # PII extraction
+│   │   ├── ocr.py                  # OCR via GPT-4o Vision
+│   │   └── classifier.py           # Document classifier (cosine similarity + LLM)
 │   ├── static/
-│   │   ├── css/app.css             # Styling with PII editor section
-│   │   └── js/app.js               # Client-side logic (chat + PII + sentiment handlers)
+│   │   ├── css/app.css             # UI styles
+│   │   └── js/app.js               # Client-side logic
 │   ├── templates/
-│   │   └── index.html              # UI layout (5 feature tabs)
-│   ├── requirements.txt            # Python dependencies
-│   ├── .env                        # API keys (not committed)
+│   │   ├── index.html              # Main UI (5-panel layout)
+│   │   └── login.html              # Password login page
+│   ├── requirements.txt
+│   ├── .env                        # API keys and secrets (never commit)
 │   └── .gitignore
-├── .gitignore                      # Root-level gitignore (venv, conda, IDE)
+├── .gitignore
 └── README.md
 ```
 
@@ -51,12 +54,21 @@ AI-Bot/
 |-----------|------------|
 | Language | Python 3.10+ |
 | Backend | Flask |
-| Frontend | HTML/CSS/JavaScript |
+| Frontend | HTML / CSS / JavaScript |
 | LLM | OpenAI API (GPT-4o) |
-| Retrieval | Semantic search (OpenAI embeddings) |
-| Chunking | Structured (section/heading/clause) + fallback splitting |
+| Embeddings | OpenAI text-embedding-3-small |
+| Database | PostgreSQL + psycopg2 |
+| Chunking | Section/heading/clause-aware + fallback splitting |
 | Document Parsing | pdfplumber, PyPDF2, pypdf, python-docx |
 | Env Management | python-dotenv |
+
+---
+
+## Prerequisites
+
+- Python 3.10+
+- PostgreSQL 16+ (running locally or remotely)
+- OpenAI API key
 
 ---
 
@@ -65,22 +77,21 @@ AI-Bot/
 ### 1. Clone and navigate
 
 ```bash
-git clone https://github.com/Tanishk190/AI-Bot.git
-cd AI-Bot/ai_suite
+git clone https://github.com/Tanishk190/DocuMind.git
+cd DocuMind/ai_suite
 ```
 
-### 2. Create conda environment (recommended)
+### 2. Create environment
 
 ```bash
-conda create -n ai-suite python=3.10
-conda activate ai-suite
-```
+# conda (recommended)
+conda create -n documind python=3.10
+conda activate documind
 
-Or use venv:
-```bash
+# or venv
 python -m venv venv
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Mac/Linux
+venv\Scripts\activate      # Windows
+source venv/bin/activate   # Mac/Linux
 ```
 
 ### 3. Install dependencies
@@ -89,22 +100,37 @@ source venv/bin/activate  # Mac/Linux
 pip install -r requirements.txt
 ```
 
-Semantic search uses OpenAI embeddings (requires `OPENAI_API_KEY`).
+### 4. Set up PostgreSQL
 
-### 4. Set up API key
+```sql
+CREATE DATABASE documind;
+CREATE USER documind_user WITH PASSWORD 'your-password';
+GRANT ALL PRIVILEGES ON DATABASE documind TO documind_user;
+GRANT ALL ON SCHEMA public TO documind_user;
+```
+
+Then run the schema:
+
+```bash
+psql -U documind_user -d documind -f schema.sql
+```
+
+### 5. Configure environment
 
 Create `.env` in `ai_suite/`:
 
-```
-OPENAI_API_KEY=sk-your-key-here
+```env
+OPENAI_API_KEY=sk-...
+DATABASE_URL=postgresql://documind_user:your-password@localhost:5432/documind
+APP_PASSWORD=your-app-password        # enables login gate
+SECRET_KEY=your-secret-key            # Flask session key
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small   # optional
 ```
 
-This file is in `.gitignore` — **never commit it**.
-
-### 5. Run Flask
+### 6. Run
 
 ```bash
-python app.py   
+python app.py
 ```
 
 Visit: **http://127.0.0.1:5000**
@@ -116,111 +142,45 @@ Visit: **http://127.0.0.1:5000**
 ### 💬 AI Chat
 
 **User Flow:**
-1. Upload PDF, TXT, or DOCX files
-2. System extracts text and chunks using section/heading/clause-aware logic (chat only)
-3. Chunks are embedded using OpenAI embeddings
-4. User asks a question
-5. System finds semantically similar chunks (not just keyword matching)
-6. GPT-4o answers based only on retrieved context
+1. Upload PDF, TXT, or DOCX via the Knowledge Base panel
+2. Documents are chunked (section/heading/clause-aware), embedded, and stored in PostgreSQL
+3. Ask a question — system retrieves top-3 semantically similar chunks
+4. GPT-4o answers with multi-turn context (remembers last 6 messages)
+5. Sources shown as citation pills under each answer
 
 **Key Features:**
-- **Semantic Search:** Understands meaning, not just keywords ("author" ≈ "writer")
-- **Smart Chunking:** Section/Heading/Clause-aware, with safe fallbacks
-- **Chunk Size:** 500 characters with 17% overlap (85 chars)
-- **Retrieval Quality:** Top-3 chunks with highest semantic similarity
-- **Context Window:** Only provides relevant context to GPT-4o
-
-**Example:**
-```
-Q: Who wrote this?
-✅ Found: "The author, John Smith, wrote..."
-✅ Found: "Written by Jane Doe in 2020..."
-✅ Answers accurately with semantic search
-```
+- **Multi-turn context:** Follow-up questions like "What about section 3?" work correctly
+- **Markdown rendering:** Bold, lists, tables, code blocks rendered in the UI
+- **Source citations:** Every answer shows the source filename and chunk number
+- **Persistent history:** Chat history survives server restarts (stored in DB)
+- **Selective search:** Check/uncheck documents to restrict which files are queried
+- **Document deletion:** Remove indexed documents without logging out
 
 ### 🔍 OCR
 
-**User Flow:**
-1. Upload PNG/JPG/JPEG images
-2. Click "Run OCR"
-3. Text is extracted using LightOnOCR-2-1B
-4. Copy or download the extracted text
-
-**Key Features:**
-- **Model:** lightonai/LightOnOCR-2-1B (Transformers)
-- **Multiple images:** Batch processing supported
-- **Export:** Copy to clipboard or download as TXT
-- **Error handling:** Returns OCR failure details if extraction fails
-
-### 📁 Document Classifier
-
-**User Flow:**
-1. Enter relevance criteria
-2. Upload PDF/TXT/DOCX documents
-3. Classify into Relevant / Not Relevant / Uncertain
-
-**Key Features:**
-- **Per-file classification:** Each document processed independently
-- **Reasoning included:** Similarity-based rationale with LLM refinement for mid-range scores
-- **Fallbacks:** Unreadable docs marked Uncertain with OCR hint
+- Upload PNG/JPG/JPEG images
+- Text extracted via **GPT-4o Vision** (not a local model)
+- Copy to clipboard or download as TXT
 
 ### 🔐 PII Extractor
 
-**User Flow:**
-1. Paste text to analyze into the input textarea
-2. Customize the system prompt to specify which PII fields to extract
-3. Click "Extract PII" button
-4. See tabular output with all detected PII fields
-5. Copy JSON or download as file
-
-**Key Features:**
-- **Customizable Prompts:** Edit system prompt to define exactly what to extract
-- **Table Output:** Clear, dynamic table for one or many entities
-- **JSON Export:** Structured, parseable results on demand
-- **Easy Sharing:** Copy or download extracted PII
-- **Safe Processing:** Uses OpenAI API, no data persistence
-
-**Example System Prompt:**
-```
-Extract PII from the text below. Return valid JSON with these fields:
-You are a PII (Personally Identifiable Information) extraction specialist. Extract all personal and sensitive information from the given text. Return ONLY a valid JSON object with All the PII feilds mentioned . Each Person Should be a top level Key name Person 1 , Person 2 , etc. If a field is not found, set it to null. Be thorough and accurate.
-```
-
----
+- Paste text, customize the system prompt to define what to extract
+- Returns structured JSON rendered as a table
+- Export as JSON file or copy to clipboard
 
 ### 📊 Sentiment Analysis
 
-**User Flow:**
-1. Provide either direct text or upload PDF/TXT/DOCX (not both)
-2. Text is normalized and truncated to 3000 characters
-3. GPT-4o returns JSON with sentiment, confidence, tone, and reasoning
-4. UI updates cards, meters, and source summary
+- Input: direct text or uploaded document (not both)
+- Truncates to 3000 chars with a warning if exceeded
+- Legal-focused prompt flags hostile/adversarial tone
+- Returns sentiment, confidence (0–100), tone, and reasoning
 
-**Key Features:**
-- **Legal-focused prompt:** Flags hostile/adversarial tone
-- **Multiple inputs:** Text or document upload
-- **Structured output:** JSON parsed and displayed in UI
-- **Source + length:** Shows whether input was text or document and character count
+### 📁 Document Classifier
 
----
-
-## Current Development
-
-**Recent Changes (May 29, 2026):**
-- ✅ Switched embeddings to OpenAI (configurable model)
-- ✅ Added structured chunking for AI Chat (section/heading/clause aware)
-- ✅ Updated chunk size to 500 with 17% overlap
-- ✅ Improved table extraction for PDF/DOCX (pdfplumber + table blocks)
-- ✅ Added Document Classifier feature (Relevant / Not Relevant / Uncertain)
-- ✅ Improved OCR error reporting with server-side failures surfaced
-
-**Previous Milestones:**
-- ✅ Migrated from Hugging Face to OpenAI GPT-4o
-- ✅ Implemented semantic search RAG (OpenAI embeddings)
-- ✅ Multi-strategy document chunking
-- ✅ Flask web interface with real-time indexing
-
-**Git Branch:** `AI_chat`
+- Define relevance criteria in plain English
+- Upload documents — each is scored by cosine similarity
+- LLM called for mid-range scores to refine the classification
+- Returns Relevant / Not Relevant / Uncertain with reasoning per file
 
 ---
 
@@ -228,84 +188,82 @@ You are a PII (Personally Identifiable Information) extraction specialist. Extra
 
 ### Environment Variables
 
-```env
-OPENAI_API_KEY=sk-...  # Your OpenAI API key
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small  # Optional (default shown)
-```
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OPENAI_API_KEY` | ✅ | — | OpenAI API key |
+| `DATABASE_URL` | ✅ | — | PostgreSQL connection string |
+| `APP_PASSWORD` | ❌ | (no auth) | Enables password login gate |
+| `SECRET_KEY` | ❌ | auto-generated | Flask session secret |
+| `OPENAI_EMBEDDING_MODEL` | ❌ | `text-embedding-3-small` | Embedding model |
 
-### Chunking Settings (core/rag.py)
-
-```python
-chunk_size = 600       # Characters per chunk
-overlap = 110          # ~18% overlap between chunks
-```
-
-### Retrieval Settings (core/rag.py)
+### Chunking defaults (`core/rag.py`)
 
 ```python
-k = 3                  # Number of chunks to retrieve
+chunk_size = 600    # characters per chunk
+overlap    = 110    # ~18% overlap between chunks
+k          = 3      # top-k chunks retrieved per query
 ```
 
 ---
 
 ## Troubleshooting
 
-**"not found in documents"**
-- Ensure documents are indexed first (click "Index documents")
-- Semantic search may need more training data for very niche topics
-- Try simpler, more specific questions
-
 **Flask won't start**
-- Check `OPENAI_API_KEY` is set in `.env`
-- Verify all dependencies installed: `pip install -r requirements.txt`
-- On Windows, try: `python -m flask run`
+- Check `OPENAI_API_KEY` and `DATABASE_URL` are set in `.env`
+- Verify PostgreSQL is running: `pg_isready -h localhost`
+- Run `python -c "from app import app; print('OK')"` to catch import errors
 
-**Sentiment analysis errors**
-- Use either text or documents (not both)
-- Scanned PDFs require OCR first (use the OCR panel)
-- TXT/DOCX files are safest for extraction
+**"No readable text found"**
+- Scanned PDFs produce no text — run OCR first, then paste the result
+- TXT and DOCX files are most reliable
 
-**OCR errors**
-- Ensure images are PNG/JPG/JPEG
-- First run downloads the model weights (can take a while)
-- If extraction is blank, check the image quality or contrast
-- If OCR fails for all images, the API returns a 503 with the failure message
+**Chat answers from wrong documents**
+- Use the Knowledge Base dropdown to uncheck irrelevant documents
 
-**Slow first load**
-OpenAI embeddings are called at runtime; ensure network access is available.
+**Sentiment / classifier errors**
+- Documents over 3000 chars are truncated — a warning is shown in the response
+
+**Embeddings slow on first index**
+- OpenAI embeddings API is called once per chunk; subsequent indexing of the same text reuses cached embeddings from the DB
 
 ---
 
-## Requirements
+## Data & Privacy
 
-```
-Flask
-openai
-python-docx
-pdfplumber
-pypdf
-Pillow
-python-dotenv
-PyPDF2
-numpy
-transformers
-torch
-torchvision
-```
+All documents and text are sent to the **OpenAI API** for processing. Do not upload files you are not authorised to share with a third-party AI service. The app displays a consent banner on first use. No data is stored outside your own PostgreSQL database.
+
+---
+
+## Recent Changes (May 31, 2026)
+
+- ✅ PostgreSQL persistence — all results, chat history, and embeddings stored in DB
+- ✅ Password authentication with login/logout
+- ✅ Multi-turn chat context (GPT-4o remembers conversation history)
+- ✅ Markdown rendering in AI responses
+- ✅ Source citations under every answer
+- ✅ Document deletion from Knowledge Base
+- ✅ Chat history restored on page refresh
+- ✅ Consent banner for OpenAI data disclosure
+- ✅ Scanned PDF warnings surfaced to UI
+- ✅ Sentiment truncation warning in API response
+- ✅ OpenAI client singleton (was re-created on every call)
+- ✅ Removed unused transformers/torch from requirements
 
 ---
 
 ## Next Steps (TODO)
 
-- [ ] Add database persistence (chat history + indexed documents)
-- [ ] Add chat history export (JSON/CSV)
-- [ ] Deploy to production (Heroku/Railway)
+- [ ] User accounts with roles (admin, staff, read-only)
+- [ ] Client/matter-level document organisation
+- [ ] Audit log viewer in the UI
+- [ ] Deploy to production (Railway / Render)
+- [ ] Chat history export (JSON/CSV)
 
 ---
 
 ## Author
 
-**Tanishk** — B.Tech AI & Data Science  
+**Tanishk** — B.Tech AI & Data Science
 Built as part of internship at [Knovos](https://www.knovos.com) — AI-powered eDiscovery & legal tech
 
-**GitHub:** https://github.com/Tanishk190/AI-Bot
+**GitHub:** https://github.com/Tanishk190/DocuMind
