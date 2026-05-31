@@ -1,28 +1,64 @@
 """AI Suite - Document Intelligence Web App with OpenAI GPT-4o."""
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for
+import hashlib
 import os
+import uuid
 
 load_dotenv()
 
 try:
-    from core.llm import generate_completion, build_rag_prompt, parse_llm_json
-    from core.rag import load_documents, load_chat_documents, retrieve_relevant_chunks, Chunk
+    from core.llm import generate_completion, generate_chat_completion, build_rag_prompt, parse_llm_json
+    from core.rag import (
+        load_documents, load_chat_documents, retrieve_relevant_chunks_db,
+        embed_session_chunks, Chunk, _text_hash,
+    )
     from core.pii import extract_pii, format_pii_for_display
     from core.ocr import extract_ocr_text
     from core.classifier import classify_documents
+    from core.database import (
+        init_db, get_or_create_session, delete_session,
+        insert_document, insert_chunks, get_session_document_count,
+        get_session_documents, delete_document,
+        save_chat_message, get_chat_history, clear_chat_history,
+        save_pii_result, save_sentiment_result,
+        save_ocr_result, save_classifier_result,
+    )
 except ModuleNotFoundError:
-    from ai_suite.core.llm import generate_completion, build_rag_prompt, parse_llm_json
-    from ai_suite.core.rag import load_documents, load_chat_documents, retrieve_relevant_chunks, Chunk
+    from ai_suite.core.llm import generate_completion, generate_chat_completion, build_rag_prompt, parse_llm_json
+    from ai_suite.core.rag import (
+        load_documents, load_chat_documents, retrieve_relevant_chunks_db,
+        embed_session_chunks, Chunk, _text_hash,
+    )
     from ai_suite.core.pii import extract_pii, format_pii_for_display
     from ai_suite.core.ocr import extract_ocr_text
     from ai_suite.core.classifier import classify_documents
+    from ai_suite.core.database import (
+        init_db, get_or_create_session, delete_session,
+        insert_document, insert_chunks, get_session_document_count,
+        get_session_documents, delete_document,
+        save_chat_message, get_chat_history, clear_chat_history,
+        save_pii_result, save_sentiment_result,
+        save_ocr_result, save_classifier_result,
+    )
 
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+app.secret_key = os.getenv("SECRET_KEY", uuid.uuid4().hex)
 
-CHAT_CHUNKS = []
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+
+
+def _get_session_id() -> str:
+    if "sid" not in session:
+        session["sid"] = uuid.uuid4().hex
+    return session["sid"]
+
+
+def _get_session_db_id() -> int:
+    return get_or_create_session(_get_session_id())
+
 
 TOOLS = [
     {
@@ -60,6 +96,38 @@ TOOLS = [
 ]
 
 
+@app.before_request
+def require_login():
+    if not APP_PASSWORD:
+        return
+    allowed = {"login", "static"}
+    if request.endpoint in allowed:
+        return
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not APP_PASSWORD:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        if request.form.get("password") == APP_PASSWORD:
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        return render_template("login.html", error="Incorrect password.")
+    return render_template("login.html", error=None)
+
+
+@app.route("/logout")
+def logout():
+    sid = session.get("sid")
+    if sid:
+        delete_session(sid)
+    session.clear()
+    return redirect(url_for("login") if APP_PASSWORD else url_for("index"))
+
+
 @app.route("/")
 def index():
     return render_template("index.html", tools=TOOLS)
@@ -68,71 +136,151 @@ def index():
 @app.post("/api/chat/index")
 def index_chat_documents():
     """Index documents for RAG."""
-    global CHAT_CHUNKS
-    
     files = request.files.getlist("documents")
     if not files:
         return jsonify({"error": "Upload at least one document."}), 400
-    
+
     try:
+        session_db_id = _get_session_db_id()
         chunks = load_chat_documents(files)
         if not chunks:
             return jsonify({"error": "No readable text found in uploaded documents."}), 400
-        
-        CHAT_CHUNKS = chunks
-        indexed_files = _group_by_source(chunks)
-        
+
+        # Group chunks by source file and persist
+        by_source: dict[str, list[Chunk]] = {}
+        for chunk in chunks:
+            by_source.setdefault(chunk.source, []).append(chunk)
+
+        warnings = []
+        all_sources = {os.path.basename(f.filename) for f in files if f and f.filename}
+
+        for source, source_chunks in by_source.items():
+            raw_text = " ".join(c.text for c in source_chunks)
+            content_hash = hashlib.sha256(raw_text.encode()).hexdigest()
+            doc_id = insert_document(session_db_id, source, raw_text, content_hash, tool="chat")
+            insert_chunks(doc_id, [
+                {
+                    "chunk_index": c.index,
+                    "text": c.text,
+                    "text_hash": _text_hash(c.text),
+                    "source": c.source,
+                }
+                for c in source_chunks
+            ])
+
+        empty_files = all_sources - set(by_source.keys())
+        for name in empty_files:
+            warnings.append(f"{name}: no text extracted. If this is a scanned PDF, run OCR first.")
+
+        embed_session_chunks(session_db_id)
+
+        indexed_files = [
+            {"name": source, "chunks": len(source_chunks)}
+            for source, source_chunks in by_source.items()
+        ]
+
         return jsonify({
             "message": "Documents indexed successfully.",
             "files": indexed_files,
-            "total_chunks": len(CHAT_CHUNKS),
+            "total_chunks": len(chunks),
+            "warnings": warnings,
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 
+@app.get("/api/chat/documents")
+def list_chat_documents():
+    """List all indexed documents for the current session."""
+    session_db_id = _get_session_db_id()
+    docs = get_session_documents(session_db_id)
+    for doc in docs:
+        doc["uploaded_at"] = doc["uploaded_at"].isoformat() if doc.get("uploaded_at") else None
+    return jsonify({"documents": docs})
+
+
+@app.delete("/api/chat/documents/<int:doc_id>")
+def remove_chat_document(doc_id):
+    """Delete an indexed document and its chunks."""
+    session_db_id = _get_session_db_id()
+    deleted = delete_document(doc_id, session_db_id)
+    if not deleted:
+        return jsonify({"error": "Document not found."}), 404
+    return jsonify({"message": "Document deleted."})
+
+
+@app.get("/api/chat/history")
+def chat_history():
+    """Return chat history for the current session."""
+    session_db_id = _get_session_db_id()
+    messages = get_chat_history(session_db_id)
+    for msg in messages:
+        msg["created_at"] = msg["created_at"].isoformat() if msg.get("created_at") else None
+    return jsonify({"messages": messages})
+
+
+@app.delete("/api/chat/history")
+def clear_history():
+    """Clear chat history for the current session."""
+    session_db_id = _get_session_db_id()
+    clear_chat_history(session_db_id)
+    return jsonify({"message": "Chat history cleared."})
+
+
+CHAT_CONTEXT_WINDOW = 6  # number of recent messages to include for multi-turn
+
+
 @app.post("/api/chat/message")
 def chat_message():
-    """Generate chat response using RAG."""
+    """Generate chat response using RAG with multi-turn context."""
     payload = request.get_json(silent=True) or {}
     question = (payload.get("message") or "").strip()
-    
+    document_ids = payload.get("document_ids")
+
     if not question:
         return jsonify({"error": "Enter a question first."}), 400
-    
-    if not CHAT_CHUNKS:
+
+    session_db_id = _get_session_db_id()
+    doc_count = get_session_document_count(session_db_id)
+    if doc_count == 0:
         return jsonify({"error": "Upload and index documents before asking."}), 400
-    
+
     try:
-        relevant = retrieve_relevant_chunks(question, CHAT_CHUNKS, k=3)
+        save_chat_message(session_db_id, "user", question)
+
+        relevant = retrieve_relevant_chunks_db(
+            question, session_db_id, k=3, document_ids=document_ids
+        )
         if not relevant:
-            return jsonify({
-                "answer": "I could not find relevant context in the uploaded documents.",
-                "sources": [],
-            })
-        
+            answer = "I could not find relevant context in the uploaded documents."
+            save_chat_message(session_db_id, "assistant", answer)
+            return jsonify({"answer": answer, "sources": []})
+
         context_blocks = [
             f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
             for chunk in relevant
         ]
         system_p, user_p = build_rag_prompt(question, context_blocks)
-        answer = generate_completion(user_p, system_prompt=system_p)
+
+        # Build multi-turn messages from recent history
+        history = get_chat_history(session_db_id)
+        # Exclude the message we just saved (the current question)
+        prior = history[:-1][-CHAT_CONTEXT_WINDOW:]
+
+        messages = []
+        for msg in prior:
+            role = "assistant" if msg["role"] == "assistant" else "user"
+            messages.append({"role": role, "content": msg["content"]})
+        messages.append({"role": "user", "content": user_p})
+
+        answer = generate_chat_completion(messages, system_prompt=system_p)
         sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
-        
+
+        save_chat_message(session_db_id, "assistant", answer, sources)
+
         return jsonify({"answer": answer, "sources": sources})
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
-
-
-def _group_by_source(chunks: list) -> list[dict]:
-    """Group chunks by source file."""
-    by_source = {}
-    for chunk in chunks:
-        if chunk.source not in by_source:
-            by_source[chunk.source] = 0
-        by_source[chunk.source] += 1
-    
-    return [{"name": source, "chunks": count} for source, count in by_source.items()]
 
 
 @app.post("/api/pii/extract")
@@ -141,15 +289,19 @@ def pii_extract():
     payload = request.get_json(silent=True) or {}
     text = (payload.get("text") or "").strip()
     system_prompt = (payload.get("system_prompt") or "").strip()
-    
+
     if not text:
         return jsonify({"error": "Input text is required."}), 400
-    
+
     if not system_prompt:
         return jsonify({"error": "System prompt is required."}), 400
-    
+
     try:
         pii_data = extract_pii(text, system_prompt)
+
+        session_db_id = _get_session_db_id()
+        save_pii_result(session_db_id, text, pii_data)
+
         return jsonify({
             "data": pii_data,
             "formatted": format_pii_for_display(pii_data)
@@ -182,15 +334,23 @@ def ocr_extract():
                 return jsonify({"error": f"OCR failed: {errors[0]}"}), 503
             return jsonify({"error": "No readable text found in uploaded images."}), 400
 
-        return jsonify({
+        response_data = {
             "text": combined_text,
             "results": results,
             "errors": errors,
-        })
+        }
+
+        session_db_id = _get_session_db_id()
+        save_ocr_result(session_db_id, response_data)
+
+        return jsonify(response_data)
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
     except Exception as exc:
         return jsonify({"error": f"OCR failed: {str(exc)}"}), 500
+
+
+SENTIMENT_CHAR_LIMIT = 3000
 
 
 @app.post("/api/sentiment/analyze")
@@ -221,8 +381,9 @@ def sentiment_analyze():
             source = "text"
 
         normalized_text = " ".join(combined_text.split())
-        normalized_text = normalized_text[:3000]
-        char_count = len(normalized_text)
+        original_length = len(normalized_text)
+        truncated = original_length > SENTIMENT_CHAR_LIMIT
+        normalized_text = normalized_text[:SENTIMENT_CHAR_LIMIT]
 
         system_prompt = (
             "You are a sentiment analysis assistant for legal document review. Analyze the sentiment of the given text. "
@@ -241,13 +402,18 @@ def sentiment_analyze():
         if not isinstance(sentiment_data, dict):
             raise ValueError("LLM response must be a JSON object.")
 
-            raise ValueError("LLM response must be a JSON object.")
-
-        return jsonify({
+        result = {
             **sentiment_data,
             "source": source,
-            "char_count": char_count,
-        })
+            "char_count": len(normalized_text),
+        }
+        if truncated:
+            result["warning"] = f"Text was truncated from {original_length} to {SENTIMENT_CHAR_LIMIT} characters. Results reflect only the first portion."
+
+        session_db_id = _get_session_db_id()
+        save_sentiment_result(session_db_id, normalized_text, result)
+
+        return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -261,6 +427,8 @@ def classify_docs():
     """Classify documents against user-defined criteria."""
     documents = request.files.getlist("documents")
     criteria = (request.form.get("criteria") or "").strip()
+    low_threshold = float(request.form.get("low_threshold", 0.25))
+    high_threshold = float(request.form.get("high_threshold", 0.65))
 
     if not documents or not any(d for d in documents if d and d.filename):
         return jsonify({"error": "Upload at least one document."}), 400
@@ -269,9 +437,16 @@ def classify_docs():
         return jsonify({"error": "Classification criteria is required."}), 400
 
     try:
-        results = classify_documents(documents, criteria)
+        results = classify_documents(
+            documents, criteria,
+            low_threshold=low_threshold,
+            high_threshold=high_threshold,
+        )
         if not results:
             return jsonify({"error": "No readable text found in uploaded documents."}), 400
+
+        session_db_id = _get_session_db_id()
+        save_classifier_result(session_db_id, criteria, results)
 
         return jsonify({
             "criteria": criteria,
@@ -287,4 +462,5 @@ def classify_docs():
 
 
 if __name__ == "__main__":
+    init_db()
     app.run(debug=True, use_reloader=False)
