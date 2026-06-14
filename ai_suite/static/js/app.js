@@ -38,6 +38,30 @@ function showPanel(item) {
 
 navItems.forEach((item) => item.addEventListener("click", () => showPanel(item)));
 
+// ── Mobile sidebar drawer ─────────────────────────────────────────────────────
+const appShell      = document.querySelector("#app-shell");
+const menuToggle    = document.querySelector("#menu-toggle");
+const sidebarOverlay = document.querySelector("#sidebar-overlay");
+
+function openSidebar() {
+  appShell.classList.add("nav-open");
+  if (menuToggle) menuToggle.setAttribute("aria-expanded", "true");
+}
+function closeSidebar() {
+  appShell.classList.remove("nav-open");
+  if (menuToggle) menuToggle.setAttribute("aria-expanded", "false");
+}
+
+if (menuToggle) {
+  menuToggle.addEventListener("click", () => {
+    appShell.classList.contains("nav-open") ? closeSidebar() : openSidebar();
+  });
+}
+if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeSidebar);
+// Close the drawer after picking a tool on mobile
+navItems.forEach((item) => item.addEventListener("click", closeSidebar));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSidebar(); });
+
 // ── Knowledge Base dropdown ───────────────────────────────────────────────────
 const kbToggleBtn = document.querySelector("#kb-toggle-btn");
 const kbDropdown  = document.querySelector("#kb-dropdown");
