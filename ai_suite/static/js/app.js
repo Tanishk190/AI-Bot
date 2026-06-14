@@ -62,6 +62,28 @@ if (sidebarOverlay) sidebarOverlay.addEventListener("click", closeSidebar);
 navItems.forEach((item) => item.addEventListener("click", closeSidebar));
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSidebar(); });
 
+// ── Desktop sidebar collapse ──────────────────────────────────────────────────
+const collapseToggle = document.querySelector("#collapse-toggle");
+
+function applyCollapsed(collapsed) {
+  appShell.classList.toggle("sidebar-collapsed", collapsed);
+  if (collapseToggle) {
+    collapseToggle.setAttribute("aria-pressed", String(collapsed));
+    collapseToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    collapseToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  }
+}
+
+applyCollapsed(localStorage.getItem("docuMindSidebarCollapsed") === "1");
+
+if (collapseToggle) {
+  collapseToggle.addEventListener("click", () => {
+    const collapsed = !appShell.classList.contains("sidebar-collapsed");
+    applyCollapsed(collapsed);
+    localStorage.setItem("docuMindSidebarCollapsed", collapsed ? "1" : "0");
+  });
+}
+
 // ── Knowledge Base dropdown ───────────────────────────────────────────────────
 const kbToggleBtn = document.querySelector("#kb-toggle-btn");
 const kbDropdown  = document.querySelector("#kb-dropdown");

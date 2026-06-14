@@ -200,6 +200,22 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 }
 .menu-toggle:hover { background: var(--color-background-secondary); }
 
+/* Collapse toggle (desktop only) */
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 7px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  transition: background 140ms ease, color 140ms ease;
+}
+.collapse-toggle:hover { background: var(--color-background-secondary); color: var(--color-text-primary); }
+
 .sidebar-overlay {
   display: none;
   position: fixed;
@@ -293,7 +309,10 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 .content { flex: 1; min-height: 0; overflow-y: auto; padding: 22px; }
 
 .panel { display: none; }
-.panel.active { display: block; min-height: 100%; max-width: 940px; }
+/* Tool panels: capped width, centered so whitespace is balanced */
+.panel.active { display: block; min-height: 100%; max-width: 940px; margin-inline: auto; }
+/* Chat fills the full content width */
+#panel-chat.panel.active { max-width: 100%; }
 
 /* ── Chat panel ────────────────────────────────────────── */
 .chat-wrap { display: flex; flex-direction: column; height: calc(100dvh - 100px); max-width: 100%; }
@@ -540,11 +559,42 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 }
 .consent-actions button:hover { background: var(--brand-hover); }
 
+/* ── Collapsed sidebar rail (desktop only) ─────────────── */
+@media (min-width: 861px) {
+  .app-shell.sidebar-collapsed .sidebar {
+    width: 66px;
+    flex-basis: 66px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .app-shell.sidebar-collapsed .sidebar-title,
+  .app-shell.sidebar-collapsed .sidebar-sub,
+  .app-shell.sidebar-collapsed .nav-item > span:last-child,
+  .app-shell.sidebar-collapsed .user-info,
+  .app-shell.sidebar-collapsed .sidebar-links { display: none; }
+
+  .app-shell.sidebar-collapsed .sidebar-header {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .app-shell.sidebar-collapsed .nav-item {
+    justify-content: center;
+    gap: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .app-shell.sidebar-collapsed .nav-icon { min-width: 0; }
+  .app-shell.sidebar-collapsed .sidebar-footer { padding-left: 0; padding-right: 0; }
+}
+
 /* ── Responsive: tablet / mobile drawer ────────────────── */
 @media (max-width: 860px) {
   .app-shell { width: 100%; }
 
   .menu-toggle { display: flex; }
+  .collapse-toggle { display: none; }
 
   .sidebar {
     position: fixed;
