@@ -175,7 +175,27 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
 }
+
+/* Sidebar footer */
+.sidebar-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border-tertiary);
+  margin-top: auto;
+}
+.user-info { margin-bottom: 6px; }
+.user-name { font-size: 12px; font-weight: 600; color: var(--color-text-primary); }
+.user-role {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--color-text-tertiary); font-weight: 700;
+}
+.sidebar-links { display: flex; flex-direction: column; gap: 4px; }
+.sidebar-links a {
+  font-size: 12px; color: var(--color-text-secondary);
+  text-decoration: none;
+}
+.sidebar-links a:hover { color: var(--blue); }
 
 .nav-item {
   width: 100%;

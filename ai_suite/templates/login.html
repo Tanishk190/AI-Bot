@@ -32,6 +32,14 @@
         color: var(--color-text-secondary);
         margin-bottom: 24px;
       }
+      .login-card label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+        margin-bottom: 4px;
+      }
+      .login-card input[type="email"],
       .login-card input[type="password"] {
         width: 100%;
         padding: 10px 12px;
@@ -68,11 +76,14 @@
     <div class="login-wrap">
       <form class="login-card" method="post" action="{{ url_for('login') }}">
         <h1>DocuMind</h1>
-        <p>Enter the access password to continue.</p>
+        <p>Sign in to continue.</p>
         {% if error %}
           <div class="login-error">{{ error }}</div>
         {% endif %}
-        <input type="password" name="password" placeholder="Password" autofocus required>
+        <label for="email">Email</label>
+        <input type="email" name="email" id="email" placeholder="you@example.com" autofocus required>
+        <label for="password">Password</label>
+        <input type="password" name="password" id="password" placeholder="Password" required>
         <button type="submit">Sign in</button>
       </form>
     </div>

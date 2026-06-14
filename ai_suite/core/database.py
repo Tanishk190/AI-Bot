@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor, Json
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 _pool = None
@@ -43,11 +44,140 @@ def init_db():
             cur.execute(sql)
 
 
-# ── Sessions ──────────────────────────────────────────────────────────────────
+# ── Users ─────────────────────────────────────────────────────────────────────
 
-def get_or_create_session(session_id: str) -> int:
+def create_user(email: str, password: str, name: str, role: str = "staff") -> int:
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO users (email, password_hash, name, role) "
+                "VALUES (%s, %s, %s, %s) RETURNING id",
+                (email.lower().strip(), generate_password_hash(password), name.strip(), role)
+            )
+            return cur.fetchone()[0]
+
+
+def authenticate_user(email: str, password: str) -> dict | None:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE email = %s", (email.lower().strip(),))
+            user = cur.fetchone()
+            if user and check_password_hash(user["password_hash"], password):
+                return dict(user)
+            return None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, email, name, role, assigned_to, created_at FROM users WHERE id = %s",
+                (user_id,)
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
+
+def list_users() -> list[dict]:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT u.id, u.email, u.name, u.role, u.assigned_to, u.created_at, "
+                "a.name as assigned_to_name "
+                "FROM users u LEFT JOIN users a ON u.assigned_to = a.id "
+                "ORDER BY u.created_at"
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+
+def update_user(user_id: int, name: str | None = None, role: str | None = None,
+                password: str | None = None, assigned_to: int | None = -1) -> bool:
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name = %s")
+        values.append(name.strip())
+    if role is not None:
+        fields.append("role = %s")
+        values.append(role)
+    if password is not None:
+        fields.append("password_hash = %s")
+        values.append(generate_password_hash(password))
+    if assigned_to != -1:  # -1 = not provided, None = clear assignment
+        fields.append("assigned_to = %s")
+        values.append(assigned_to)
+    if not fields:
+        return False
+    values.append(user_id)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+            return cur.rowcount > 0
+
+
+def get_assigned_session(user_id: int) -> int | None:
+    """For read-only users: get the session of the user they're assigned to view."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT s.id FROM sessions s "
+                "JOIN users u ON s.user_id = u.id "
+                "WHERE u.id = (SELECT assigned_to FROM users WHERE id = %s) "
+                "LIMIT 1",
+                (user_id,)
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+
+def delete_user(user_id: int) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,))
+            return cur.fetchone() is not None
+
+
+def get_user_count() -> int:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM users")
+            return cur.fetchone()[0]
+
+
+def ensure_admin_exists():
+    """Create default admin from env vars if no users exist."""
+    if get_user_count() > 0:
+        return
+    email = os.getenv("ADMIN_EMAIL", "admin@documind.local")
+    password = os.getenv("ADMIN_PASSWORD", "admin")
+    name = os.getenv("ADMIN_NAME", "Admin")
+    create_user(email, password, name, role="admin")
+    print(f"Default admin created: {email}")
+
+
+# ── Sessions ──────────────────────────────────────────────────────────────────
+
+def get_or_create_session(session_id: str, user_id: int | None = None) -> int:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            if user_id is not None:
+                # Check if user already has a session
+                cur.execute("SELECT id FROM sessions WHERE user_id = %s LIMIT 1", (user_id,))
+                row = cur.fetchone()
+                if row:
+                    # Update session_id to current one
+                    cur.execute(
+                        "UPDATE sessions SET session_id = %s WHERE id = %s",
+                        (session_id, row[0])
+                    )
+                    return row[0]
+                # Create new session for user
+                cur.execute(
+                    "INSERT INTO sessions (session_id, user_id) VALUES (%s, %s) RETURNING id",
+                    (session_id, user_id)
+                )
+                return cur.fetchone()[0]
+            # Fallback: no user (should not happen with auth enabled)
             cur.execute(
                 "INSERT INTO sessions (session_id) VALUES (%s) "
                 "ON CONFLICT (session_id) DO UPDATE SET session_id = EXCLUDED.session_id "
@@ -97,7 +227,7 @@ def update_chunk_embedding(text_hash: str, embedding: list[float]):
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE chunks SET embedding = %s WHERE text_hash = %s AND embedding IS NULL",
+                "UPDATE chunks SET embedding = %s WHERE text_hash = %s",
                 (Json(embedding), text_hash)
             )
 

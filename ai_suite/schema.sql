@@ -1,11 +1,25 @@
 -- DocuMind database schema
 -- Run: psql -U documind_user -d documind -f schema.sql
 
+CREATE TABLE IF NOT EXISTS users (
+    id            SERIAL PRIMARY KEY,
+    email         VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name          VARCHAR(100) NOT NULL,
+    role          VARCHAR(20) NOT NULL DEFAULT 'staff'
+                  CHECK (role IN ('admin', 'staff', 'readonly')),
+    assigned_to   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at    TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id          SERIAL PRIMARY KEY,
     session_id  VARCHAR(64) UNIQUE NOT NULL,
+    user_id     INTEGER REFERENCES users(id) ON DELETE CASCADE,
     created_at  TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS documents (
     id           SERIAL PRIMARY KEY,

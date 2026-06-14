@@ -39,6 +39,21 @@
             </button>
           {% endfor %}
         </nav>
+
+        <div class="sidebar-footer">
+          {% if user %}
+            <div class="user-info">
+              <div class="user-name">{{ user.name }}</div>
+              <div class="user-role">{{ user.role }}</div>
+            </div>
+            <div class="sidebar-links">
+              {% if user.role == 'admin' %}
+                <a href="{{ url_for('admin_page') }}">Manage Users</a>
+              {% endif %}
+              <a href="{{ url_for('logout') }}">Logout</a>
+            </div>
+          {% endif %}
+        </div>
       </aside>
 
       <section class="main">

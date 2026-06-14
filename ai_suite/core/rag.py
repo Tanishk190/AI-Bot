@@ -64,7 +64,9 @@ def embed_session_chunks(session_db_id: int):
     chunk_rows = get_chunks_by_session(session_db_id)
     for row in chunk_rows:
         if row["embedding"] is None:
-            _get_embedding(row["text"])
+            embedding = _get_embedding(row["text"])
+            # _get_embedding may return a cached value without updating this specific chunk
+            update_chunk_embedding(row["text_hash"], embedding)
 
 
 def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 3,

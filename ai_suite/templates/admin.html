@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DocuMind — Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+    <style>
+      .admin-wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 32px 24px;
+      }
+      .admin-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+      }
+      .admin-header h1 { font-size: 20px; }
+      .admin-header a {
+        font-size: 13px;
+        color: var(--blue);
+        text-decoration: none;
+      }
+      .user-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin-bottom: 32px;
+      }
+      .user-table th, .user-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--color-border-tertiary);
+        text-align: left;
+      }
+      .user-table th {
+        background: var(--color-background-secondary);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--color-text-secondary);
+      }
+      .role-badge {
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .role-admin { background: #eaf4ff; color: #1769aa; }
+      .role-staff { background: #e1f5ee; color: #0f6e56; }
+      .role-readonly { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+      .action-btn {
+        padding: 4px 10px;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: var(--border-radius-md);
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        font-size: 11px;
+        cursor: pointer;
+        margin-right: 4px;
+      }
+      .action-btn.danger { color: var(--red); border-color: var(--red); }
+      .action-btn.danger:hover { background: #fef2f0; }
+      .add-form {
+        background: var(--color-background-secondary);
+        border: 1px solid var(--color-border-tertiary);
+        border-radius: var(--border-radius-lg);
+        padding: 20px;
+      }
+      .add-form h2 {
+        font-size: 14px;
+        margin-bottom: 16px;
+        color: var(--color-text-primary);
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .form-group { display: flex; flex-direction: column; gap: 4px; }
+      .form-group label {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .form-group input, .form-group select {
+        padding: 8px 10px;
+        border: 1px solid var(--color-border-secondary);
+        border-radius: var(--border-radius-md);
+        font-size: 13px;
+        font-family: var(--font-sans);
+      }
+      .form-actions { margin-top: 12px; }
+      .form-actions button {
+        padding: 8px 20px;
+        background: var(--blue);
+        color: #fff;
+        border: none;
+        border-radius: var(--border-radius-md);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .form-msg {
+        margin-top: 8px;
+        font-size: 12px;
+        min-height: 18px;
+      }
+      .form-msg.ok { color: var(--green); }
+      .form-msg.err { color: var(--red); }
+    </style>
+  </head>
+  <body style="background: var(--color-background-page); overflow: auto;">
+    <div class="admin-wrap">
+      <div class="admin-header">
+        <h1>User Management</h1>
+        <a href="{{ url_for('index') }}">Back to app</a>
+      </div>
+
+      <table class="user-table" id="user-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="user-tbody">
+          {% for u in users %}
+          <tr data-id="{{ u.id }}">
+            <td>{{ u.name }}</td>
+            <td>{{ u.email }}</td>
+            <td>
+              <span class="role-badge role-{{ u.role }}">{{ u.role }}</span>
+              {% if u.role == 'readonly' and u.assigned_to_name %}
+                <span style="font-size:10px;color:var(--color-text-tertiary);margin-left:4px;">views {{ u.assigned_to_name }}</span>
+              {% elif u.role == 'readonly' %}
+                <span style="font-size:10px;color:var(--red);margin-left:4px;">unassigned</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.id != current_user.id %}
+                <button class="action-btn" onclick="editUser({{ u.id }}, '{{ u.name }}', '{{ u.role }}', '{{ u.assigned_to or '' }}')">Edit</button>
+                <button class="action-btn danger" onclick="deleteUser({{ u.id }}, '{{ u.email }}')">Delete</button>
+              {% else %}
+                <span style="font-size:11px;color:var(--color-text-tertiary)">You</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="add-form">
+        <h2 id="form-title">Add User</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-name">Name</label>
+            <input id="f-name" type="text" placeholder="Full name" required>
+          </div>
+          <div class="form-group">
+            <label for="f-email">Email</label>
+            <input id="f-email" type="email" placeholder="user@example.com" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="f-password">Password</label>
+            <input id="f-password" type="password" placeholder="Password" required>
+          </div>
+          <div class="form-group">
+            <label for="f-role">Role</label>
+            <select id="f-role" onchange="toggleAssign()">
+              <option value="staff">Staff</option>
+              <option value="readonly">Read-only</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row" id="assign-row" style="display:none;">
+          <div class="form-group">
+            <label for="f-assign">Can view workspace of</label>
+            <select id="f-assign">
+              <option value="">-- Select user --</option>
+              {% for u in users %}
+                {% if u.role in ['admin', 'staff'] %}
+                  <option value="{{ u.id }}">{{ u.name }} ({{ u.role }})</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button id="form-submit" onclick="submitForm()">Create User</button>
+          <button class="action-btn" id="form-cancel" onclick="cancelEdit()" style="display:none;">Cancel</button>
+        </div>
+        <div class="form-msg" id="form-msg"></div>
+      </div>
+    </div>
+
+    <script>
+      let editingId = null;
+
+      function setMsg(text, ok) {
+        const el = document.getElementById("form-msg");
+        el.textContent = text;
+        el.className = "form-msg " + (ok ? "ok" : "err");
+      }
+
+      function toggleAssign() {
+        const role = document.getElementById("f-role").value;
+        document.getElementById("assign-row").style.display = role === "readonly" ? "" : "none";
+      }
+
+      async function submitForm() {
+        const name = document.getElementById("f-name").value.trim();
+        const email = document.getElementById("f-email").value.trim();
+        const password = document.getElementById("f-password").value;
+        const role = document.getElementById("f-role").value;
+        const assignTo = document.getElementById("f-assign").value;
+
+        if (!name || !role) { setMsg("Name and role are required.", false); return; }
+
+        if (editingId) {
+          const body = { name, role, assigned_to: role === "readonly" ? (assignTo || null) : null };
+          if (password) body.password = password;
+          const res = await fetch(`/api/admin/users/${editingId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (res.ok) { setMsg("User updated.", true); setTimeout(() => location.reload(), 600); }
+          else setMsg(data.error, false);
+        } else {
+          if (!email || !password) { setMsg("All fields required.", false); return; }
+          const res = await fetch("/api/admin/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, password, role, assigned_to: role === "readonly" ? (assignTo || null) : null }),
+          });
+          const data = await res.json();
+          if (res.ok) { setMsg("User created.", true); setTimeout(() => location.reload(), 600); }
+          else setMsg(data.error, false);
+        }
+      }
+
+      function editUser(id, name, role, assignedTo) {
+        editingId = id;
+        document.getElementById("f-name").value = name;
+        document.getElementById("f-email").value = "";
+        document.getElementById("f-email").disabled = true;
+        document.getElementById("f-password").value = "";
+        document.getElementById("f-password").placeholder = "Leave blank to keep current";
+        document.getElementById("f-password").required = false;
+        document.getElementById("f-role").value = role;
+        document.getElementById("f-assign").value = assignedTo || "";
+        toggleAssign();
+        document.getElementById("form-title").textContent = "Edit User";
+        document.getElementById("form-submit").textContent = "Update User";
+        document.getElementById("form-cancel").style.display = "inline";
+        setMsg("", true);
+      }
+
+      function cancelEdit() {
+        editingId = null;
+        document.getElementById("f-name").value = "";
+        document.getElementById("f-email").value = "";
+        document.getElementById("f-email").disabled = false;
+        document.getElementById("f-password").value = "";
+        document.getElementById("f-password").placeholder = "Password";
+        document.getElementById("f-password").required = true;
+        document.getElementById("f-role").value = "staff";
+        document.getElementById("f-assign").value = "";
+        toggleAssign();
+        document.getElementById("form-title").textContent = "Add User";
+        document.getElementById("form-submit").textContent = "Create User";
+        document.getElementById("form-cancel").style.display = "none";
+        setMsg("", true);
+      }
+
+      async function deleteUser(id, email) {
+        if (!confirm(`Delete user ${email}? All their data will be removed.`)) return;
+        const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
+        const data = await res.json();
+        if (res.ok) location.reload();
+        else alert(data.error);
+      }
+    </script>
+  </body>
+</html>
