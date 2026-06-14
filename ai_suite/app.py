@@ -573,7 +573,23 @@ def classify_docs():
         return jsonify({"error": f"Classification failed: {str(exc)}"}), 500
 
 
+def _run_startup():
+    """Initialize the database schema and seed the default admin.
+
+    Called at import time so it runs under gunicorn (where the ``__main__``
+    block below never executes). Guarded so a transient DB hiccup at boot
+    doesn't crash the worker — schema creation is idempotent and retried on
+    the next start.
+    """
+    try:
+        init_db()
+        ensure_admin_exists()
+    except Exception as exc:  # noqa: BLE001
+        print(f"Startup DB initialization failed: {exc}")
+
+
+_run_startup()
+
+
 if __name__ == "__main__":
-    init_db()
-    ensure_admin_exists()
     app.run(debug=True, use_reloader=False)
