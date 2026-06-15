@@ -316,7 +316,30 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 
 /* ── Chat panel ────────────────────────────────────────── */
 .chat-wrap { display: flex; flex-direction: column; height: calc(100dvh - 100px); max-width: 100%; }
-.chat-wrap .section-label { margin-bottom: 12px; }
+.chat-wrap .section-label { margin-bottom: 0; }
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.chat-clear-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 7px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.chat-clear-btn:hover { color: var(--red); border-color: var(--red); background: rgba(214, 80, 42, .06); }
+.chat-clear-btn:disabled:hover { color: var(--color-text-secondary); border-color: var(--color-border-secondary); background: var(--color-background-primary); }
 
 .chat-history {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -345,6 +368,20 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 }
 .bubble.ai { background: var(--color-background-secondary); border: 1px solid var(--color-border-tertiary); }
 .bubble.usr { background: var(--brand); color: #fff; }
+
+/* Blinking caret while the answer streams in */
+.bubble.ai.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--brand);
+  border-radius: 1px;
+  animation: caret-blink 1s steps(1) infinite;
+}
+@keyframes caret-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 
 .source-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-border-tertiary); }
 .source-pill { padding: 2px 8px; border-radius: 12px; background: var(--brand-soft); color: var(--color-text-info); font-size: 10px; font-weight: 600; white-space: nowrap; }

@@ -115,7 +115,16 @@
           <!-- AI Chat — full width conversation -->
           <section class="panel active" id="panel-chat" aria-labelledby="chat-heading">
             <div class="chat-wrap">
-              <div class="section-label" id="chat-heading">Conversation</div>
+              <div class="chat-toolbar">
+                <div class="section-label" id="chat-heading">Conversation</div>
+                <button class="chat-clear-btn" id="chat-clear-btn" type="button" title="Clear conversation">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  Clear
+                </button>
+              </div>
               <div class="chat-history" id="chat-history">
                 <div class="msg">
                   <div class="avatar ai">AI</div>

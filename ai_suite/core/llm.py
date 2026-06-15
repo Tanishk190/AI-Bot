@@ -60,6 +60,37 @@ def generate_chat_completion(messages: list[dict], model: str = DEFAULT_MODEL,
         raise RuntimeError(f"OpenAI API error: {str(exc)}") from exc
 
 
+def stream_chat_completion(messages: list[dict], model: str = DEFAULT_MODEL,
+                           system_prompt: str = None):
+    """Yield answer text deltas for a multi-turn conversation as they arrive.
+
+    Mirrors generate_chat_completion but uses OpenAI streaming so the caller can
+    forward tokens to the client in real time. Raises RuntimeError on API failure
+    (callers iterating this generator should wrap it in try/except).
+    """
+    try:
+        client = initialize_client()
+        system_message = system_prompt or "You are a helpful AI assistant for document analysis."
+        full_messages = [{"role": "system", "content": system_message}] + messages
+        stream = client.chat.completions.create(
+            model=model,
+            messages=full_messages,
+            temperature=0.2,
+            max_tokens=2000,
+            stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except APIConnectionError as exc:
+        raise RuntimeError(f"Could not connect to OpenAI API: {str(exc)}") from exc
+    except APIError as exc:
+        raise RuntimeError(f"OpenAI API error: {str(exc)}") from exc
+
+
 def build_rag_prompt(question: str, context_blocks: list[str]) -> tuple[str, str]:
     """Build system and user prompts for RAG."""
     context = "\n\n".join(context_blocks).strip()

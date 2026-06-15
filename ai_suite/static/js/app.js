@@ -141,6 +141,10 @@ const chatIndexStatus = document.querySelector("#chat-index-status");
 const chatHistory     = document.querySelector("#chat-history");
 const chatForm        = document.querySelector("#chat-form");
 const chatInput       = document.querySelector("#chat-input");
+const chatClearBtn    = document.querySelector("#chat-clear-btn");
+
+// Snapshot of the default welcome message, restored when the chat is cleared
+const chatWelcomeHTML = chatHistory ? chatHistory.innerHTML : "";
 
 let indexedDocCount = 0;
 const kbDocItems    = document.querySelector("#kb-doc-items");
@@ -342,6 +346,27 @@ async function loadChatHistory() {
 
 loadChatHistory();
 
+// ── Clear conversation ───────────────────────────────────────────────────────
+if (chatClearBtn) {
+  chatClearBtn.addEventListener("click", async () => {
+    if (!confirm("Clear this conversation? This cannot be undone.")) return;
+    chatClearBtn.disabled = true;
+    try {
+      const response = await fetch("/api/chat/history", { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to clear chat.");
+      }
+      if (chatHistory) chatHistory.innerHTML = chatWelcomeHTML;
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Failed to clear chat.");
+    } finally {
+      chatClearBtn.disabled = false;
+    }
+  });
+}
+
 if (chatDocuments) {
   chatDocuments.addEventListener("change", () => {
     const count = chatDocuments.files.length;
@@ -401,27 +426,66 @@ if (chatForm) {
     appendMessage("user", message);
     chatInput.value = "";
     chatInput.disabled = true;
-    const pendingBubble = appendMessage("ai", "Searching documents...");
+    const pendingBubble = appendMessage("ai", "Searching documents…");
+    pendingBubble.classList.add("streaming");
 
     try {
       const body = { message };
       const selectedIds = getSelectedDocumentIds();
       if (selectedIds) body.document_ids = selectedIds;
 
-      const response = await fetch("/api/chat/message", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error || "Chat request failed.");
-      // Re-render with markdown and sources
-      pendingBubble.innerHTML = renderMarkdown(data.answer || "No answer returned.");
-      if (data.sources && data.sources.length) {
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Chat request failed.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let answer = "";
+      let sources = [];
+      let started = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE frames are separated by a blank line
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop();
+
+        for (const frame of frames) {
+          const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
+          if (!dataLine) continue;
+          const payload = JSON.parse(dataLine.slice(5).trim());
+
+          if (payload.error) throw new Error(payload.error);
+
+          if (payload.delta) {
+            if (!started) { answer = ""; started = true; }
+            answer += payload.delta;
+            pendingBubble.innerHTML = renderMarkdown(answer);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+          } else if (payload.done) {
+            sources = payload.sources || [];
+          }
+        }
+      }
+
+      pendingBubble.classList.remove("streaming");
+      if (!answer) pendingBubble.textContent = "No answer returned.";
+
+      if (sources.length) {
         const srcRow = document.createElement("div");
         srcRow.className = "source-row";
-        data.sources.forEach((s) => {
+        sources.forEach((s) => {
           const pill = document.createElement("span");
           pill.className = "source-pill";
           pill.textContent = `${s.source} #${s.chunk}`;
@@ -430,6 +494,7 @@ if (chatForm) {
         pendingBubble.append(srcRow);
       }
     } catch (error) {
+      pendingBubble.classList.remove("streaming");
       pendingBubble.textContent = error.message;
     } finally {
       chatInput.disabled = false;

@@ -1,15 +1,16 @@
 """AI Suite - Document Intelligence Web App with OpenAI GPT-4o."""
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, session, redirect, url_for, g
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for, g, Response, stream_with_context
 from functools import wraps
 import hashlib
+import json
 import os
 import uuid
 
 load_dotenv()
 
 try:
-    from core.llm import generate_completion, generate_chat_completion, build_rag_prompt, parse_llm_json
+    from core.llm import generate_completion, generate_chat_completion, stream_chat_completion, build_rag_prompt, parse_llm_json
     from core.rag import (
         load_documents, load_chat_documents, retrieve_relevant_chunks_db,
         embed_session_chunks, Chunk, _text_hash,
@@ -29,7 +30,7 @@ try:
         get_assigned_session,
     )
 except ModuleNotFoundError:
-    from ai_suite.core.llm import generate_completion, generate_chat_completion, build_rag_prompt, parse_llm_json
+    from ai_suite.core.llm import generate_completion, generate_chat_completion, stream_chat_completion, build_rag_prompt, parse_llm_json
     from ai_suite.core.rag import (
         load_documents, load_chat_documents, retrieve_relevant_chunks_db,
         embed_session_chunks, Chunk, _text_hash,
@@ -411,6 +412,85 @@ def chat_message():
         return jsonify({"answer": answer, "sources": sources})
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
+
+
+def _sse(obj: dict) -> str:
+    """Format a dict as a Server-Sent Events data frame."""
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",  # disable proxy buffering so tokens flush immediately
+}
+
+
+@app.post("/api/chat/stream")
+@require_role("admin", "staff")
+def chat_stream():
+    """Stream a RAG chat response token-by-token over Server-Sent Events."""
+    payload = request.get_json(silent=True) or {}
+    question = (payload.get("message") or "").strip()
+    document_ids = payload.get("document_ids")
+
+    if not question:
+        return jsonify({"error": "Enter a question first."}), 400
+
+    session_db_id = _get_session_db_id()
+    doc_count = get_session_document_count(session_db_id)
+    if doc_count == 0:
+        return jsonify({"error": "Upload and index documents before asking."}), 400
+
+    # Resolve everything that needs the request/DB up front, before streaming starts.
+    try:
+        save_chat_message(session_db_id, "user", question)
+        relevant = retrieve_relevant_chunks_db(
+            question, session_db_id, k=3, document_ids=document_ids
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    if not relevant:
+        answer = "I could not find relevant context in the uploaded documents."
+        save_chat_message(session_db_id, "assistant", answer)
+
+        def gen_empty():
+            yield _sse({"delta": answer})
+            yield _sse({"done": True, "sources": []})
+
+        return Response(stream_with_context(gen_empty()), mimetype="text/event-stream", headers=_SSE_HEADERS)
+
+    context_blocks = [
+        f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
+        for chunk in relevant
+    ]
+    system_p, user_p = build_rag_prompt(question, context_blocks)
+
+    history = get_chat_history(session_db_id)
+    prior = history[:-1][-CHAT_CONTEXT_WINDOW:]
+    messages = []
+    for msg in prior:
+        role = "assistant" if msg["role"] == "assistant" else "user"
+        messages.append({"role": role, "content": msg["content"]})
+    messages.append({"role": "user", "content": user_p})
+
+    sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
+
+    def gen():
+        parts = []
+        try:
+            for delta in stream_chat_completion(messages, system_prompt=system_p):
+                parts.append(delta)
+                yield _sse({"delta": delta})
+        except RuntimeError as exc:
+            yield _sse({"error": str(exc)})
+            return
+        answer = "".join(parts).strip()
+        if answer:
+            save_chat_message(session_db_id, "assistant", answer, sources)
+        yield _sse({"done": True, "sources": sources})
+
+    return Response(stream_with_context(gen()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
 
 # ── PII, OCR, Sentiment, Classifier routes ────────────────────────────────────
