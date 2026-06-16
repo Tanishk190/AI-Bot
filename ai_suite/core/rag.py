@@ -21,6 +21,7 @@ class Chunk:
     text: str
     source: str
     index: int
+    page: int | None = None
 
 
 _embeddings_client = None
@@ -100,7 +101,7 @@ def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 3,
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return [
-            Chunk(text=row["text"], source=row["source"], index=row["chunk_index"])
+            Chunk(text=row["text"], source=row["source"], index=row["chunk_index"], page=row.get("page"))
             for row, _ in scored[:k]
         ]
     except Exception as e:
@@ -119,12 +120,12 @@ def _bm25_retrieval_db(question: str, chunk_rows: list[dict], k: int) -> list[Ch
             scored.append((row, overlap))
     scored.sort(key=lambda x: x[1], reverse=True)
     return [
-        Chunk(text=row["text"], source=row["source"], index=row["chunk_index"])
+        Chunk(text=row["text"], source=row["source"], index=row["chunk_index"], page=row.get("page"))
         for row, _ in scored[:k]
     ]
 
 
-# ── Document loading (unchanged) ─────────────────────────────────────────────
+# ── Document loading ─────────────────────────────────────────────────────────
 
 def load_documents(uploaded_files: list) -> list[Chunk]:
     chunks = []
@@ -139,14 +140,39 @@ def load_documents(uploaded_files: list) -> list[Chunk]:
 
 
 def load_chat_documents(uploaded_files: list) -> list[Chunk]:
+    """Load chat documents into chunks, tagging each chunk with its source page.
+
+    PDFs are chunked page-by-page so every chunk carries an accurate page
+    number for citations. TXT/DOCX have no page concept, so page stays None.
+    Chunk indices are renumbered sequentially across the whole document.
+    """
     chunks = []
     for file_storage in uploaded_files:
         if not file_storage or not file_storage.filename:
             continue
         filename = os.path.basename(file_storage.filename)
-        text = _extract_text(file_storage, filename)
-        if text:
-            chunks.extend(chunk_text_structured(text, filename))
+        file_chunks: list[Chunk] = []
+
+        if filename.lower().endswith(".pdf"):
+            for page_num, page_text in _extract_pdf_pages(file_storage):
+                if not page_text or not page_text.strip():
+                    continue
+                for chunk in chunk_text_structured(page_text, filename):
+                    chunk.page = page_num
+                    file_chunks.append(chunk)
+            # Fallback: extractors that don't expose pages still yield whole-doc text
+            if not file_chunks:
+                text = _extract_text(file_storage, filename)
+                if text:
+                    file_chunks = chunk_text_structured(text, filename)
+        else:
+            text = _extract_text(file_storage, filename)
+            if text:
+                file_chunks = chunk_text_structured(text, filename)
+
+        for i, chunk in enumerate(file_chunks, start=1):
+            chunk.index = i
+        chunks.extend(file_chunks)
     return chunks
 
 
@@ -414,6 +440,79 @@ def _extract_text(file_storage, filename: str) -> str:
     except Exception as e:
         print(f"Error extracting text from {filename}: {e}")
     return ""
+
+
+def _extract_pdf_pages(file_storage) -> list[tuple[int, str]]:
+    """Extract text per page as (page_number, text), tables included.
+
+    Tries pdfplumber → PyPDF2 → pypdf, mirroring _extract_pdf, but preserves
+    page boundaries so chunks can be attributed to a page.
+    """
+    try:
+        import pdfplumber
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        pages_out: list[tuple[int, str]] = []
+        with pdfplumber.open(file_storage.stream) as pdf:
+            for n, page in enumerate(pdf.pages, start=1):
+                page_text = page.extract_text(x_tolerance=1, y_tolerance=1) or ""
+                table_blocks = []
+                for table in (page.extract_tables() or []):
+                    rows = []
+                    for row in table:
+                        cells = [(cell or "").strip().replace("\n", " ") for cell in row]
+                        rows.append("\t".join(cells).strip())
+                    if rows:
+                        table_blocks.append("\n".join(rows))
+                if table_blocks:
+                    table_text = "\n\n".join(table_blocks)
+                    page_text = f"{page_text}\n\n{table_text}".strip() if page_text else table_text
+                pages_out.append((n, page_text))
+        if any(t.strip() for _, t in pages_out):
+            return pages_out
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Per-page extraction with pdfplumber failed: {e}")
+
+    try:
+        from PyPDF2 import PdfReader
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        reader = PdfReader(file_storage)
+        pages_out = [(n, (page.extract_text() or "")) for n, page in enumerate(reader.pages, start=1)]
+        if any(t.strip() for _, t in pages_out):
+            return pages_out
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"Per-page extraction with PyPDF2 failed: {e}")
+
+    try:
+        from pypdf import PdfReader
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        try:
+            reader = PdfReader(file_storage, strict=False)
+        except TypeError:
+            reader = PdfReader(file_storage)
+        out = []
+        for n, page in enumerate(reader.pages, start=1):
+            try:
+                extracted = page.extract_text(extraction_mode="layout")
+            except TypeError:
+                extracted = page.extract_text()
+            out.append((n, extracted or ""))
+        return out
+    except Exception as e:
+        print(f"Per-page extraction with pypdf failed: {e}")
+        return []
 
 
 def _extract_pdf(file_storage) -> str:

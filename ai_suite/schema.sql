@@ -38,8 +38,12 @@ CREATE TABLE IF NOT EXISTS chunks (
     text        TEXT NOT NULL,
     text_hash   VARCHAR(64) NOT NULL,
     source      VARCHAR(255) NOT NULL,
+    page        INTEGER,
     embedding   JSONB
 );
+
+-- Backfill for databases created before the page column existed
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS page INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_text_hash ON chunks(text_hash);

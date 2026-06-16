@@ -213,12 +213,12 @@ def insert_chunks(document_id: int, chunks_data: list[dict]):
     with get_connection() as conn:
         with conn.cursor() as cur:
             args = [
-                (document_id, c["chunk_index"], c["text"], c["text_hash"], c["source"])
+                (document_id, c["chunk_index"], c["text"], c["text_hash"], c["source"], c.get("page"))
                 for c in chunks_data
             ]
             cur.executemany(
-                "INSERT INTO chunks (document_id, chunk_index, text, text_hash, source) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO chunks (document_id, chunk_index, text, text_hash, source, page) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 args
             )
 
@@ -250,7 +250,7 @@ def get_chunks_by_session(session_db_id: int, document_ids: list[int] | None = N
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if document_ids:
                 cur.execute(
-                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.embedding "
+                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.page, c.embedding "
                     "FROM chunks c "
                     "JOIN documents d ON c.document_id = d.id "
                     "WHERE d.session_id = %s AND d.tool = 'chat' AND d.id = ANY(%s) "
@@ -259,7 +259,7 @@ def get_chunks_by_session(session_db_id: int, document_ids: list[int] | None = N
                 )
             else:
                 cur.execute(
-                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.embedding "
+                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.page, c.embedding "
                     "FROM chunks c "
                     "JOIN documents d ON c.document_id = d.id "
                     "WHERE d.session_id = %s AND d.tool = 'chat' "

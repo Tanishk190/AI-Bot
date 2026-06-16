@@ -99,7 +99,7 @@ def build_rag_prompt(question: str, context_blocks: list[str]) -> tuple[str, str
     "Use only the provided context from the uploaded documents. "
     "Structure your response as:\n"
     "Answer: <your answer>\n\n"
-    "Sources: <filename> | Section: <section> | Chunk #<chunk number>\n\n"
+    "Sources: <filename> | Page <page number if given> | Chunk #<chunk number>\n\n"
     "If the answer requires calculating a difference between two dates or numbers found in the context, compute it and state the result. "
     "If the answer is not in the context, say: I could not find it in the uploaded documents."
 )

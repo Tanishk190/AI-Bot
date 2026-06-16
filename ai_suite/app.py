@@ -288,6 +288,7 @@ def index_chat_documents():
                     "text": c.text,
                     "text_hash": _text_hash(c.text),
                     "source": c.source,
+                    "page": c.page,
                 }
                 for c in source_chunks
             ])
@@ -356,6 +357,20 @@ def clear_history():
 CHAT_CONTEXT_WINDOW = 6
 
 
+def _context_block(chunk) -> str:
+    """Format a retrieved chunk as a context block, including its page if known."""
+    loc = f", page {chunk.page}" if getattr(chunk, "page", None) else ""
+    return f"Source: {chunk.source}{loc}, chunk {chunk.index}\n{chunk.text}"
+
+
+def _chunk_source(chunk) -> dict:
+    """Build the source citation dict sent to the UI (page included when known)."""
+    src = {"source": chunk.source, "chunk": chunk.index}
+    if getattr(chunk, "page", None):
+        src["page"] = chunk.page
+    return src
+
+
 @app.post("/api/chat/message")
 @require_role("admin", "staff")
 def chat_message():
@@ -383,10 +398,7 @@ def chat_message():
             save_chat_message(session_db_id, "assistant", answer)
             return jsonify({"answer": answer, "sources": []})
 
-        context_blocks = [
-            f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
-            for chunk in relevant
-        ]
+        context_blocks = [_context_block(chunk) for chunk in relevant]
         system_p, user_p = build_rag_prompt(question, context_blocks)
 
         history = get_chat_history(session_db_id)
@@ -399,7 +411,7 @@ def chat_message():
         messages.append({"role": "user", "content": user_p})
 
         answer = generate_chat_completion(messages, system_prompt=system_p)
-        sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
+        sources = [_chunk_source(chunk) for chunk in relevant]
 
         save_chat_message(session_db_id, "assistant", answer, sources)
 
@@ -454,10 +466,7 @@ def chat_stream():
 
         return Response(stream_with_context(gen_empty()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
-    context_blocks = [
-        f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
-        for chunk in relevant
-    ]
+    context_blocks = [_context_block(chunk) for chunk in relevant]
     system_p, user_p = build_rag_prompt(question, context_blocks)
 
     history = get_chat_history(session_db_id)
@@ -468,7 +477,7 @@ def chat_stream():
         messages.append({"role": role, "content": msg["content"]})
     messages.append({"role": "user", "content": user_p})
 
-    sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
+    sources = [_chunk_source(chunk) for chunk in relevant]
 
     def gen():
         parts = []

@@ -288,6 +288,12 @@ function renderMarkdown(text) {
   return html;
 }
 
+// Citation pill label, e.g. "audit.pdf · p.3 · #9"
+function sourceLabel(s) {
+  const page = s.page ? ` · p.${s.page}` : "";
+  return `${s.source}${page} · #${s.chunk}`;
+}
+
 function appendMessage(role, text, sources) {
   const row = document.createElement("div");
   row.className = role === "user" ? "msg user" : "msg";
@@ -314,7 +320,7 @@ function appendMessage(role, text, sources) {
     sources.forEach((s) => {
       const pill = document.createElement("span");
       pill.className = "source-pill";
-      pill.textContent = `${s.source} #${s.chunk}`;
+      pill.textContent = sourceLabel(s);
       srcRow.append(pill);
     });
     bubble.append(srcRow);
@@ -488,7 +494,7 @@ if (chatForm) {
         sources.forEach((s) => {
           const pill = document.createElement("span");
           pill.className = "source-pill";
-          pill.textContent = `${s.source} #${s.chunk}`;
+          pill.textContent = sourceLabel(s);
           srcRow.append(pill);
         });
         pendingBubble.append(srcRow);
