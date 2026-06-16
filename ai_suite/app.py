@@ -23,7 +23,7 @@ try:
         insert_document, insert_chunks, get_session_document_count,
         get_session_documents, delete_document,
         save_chat_message, get_chat_history, clear_chat_history,
-        save_pii_result, save_sentiment_result,
+        save_pii_result,
         save_ocr_result, save_classifier_result,
         create_user, authenticate_user, get_user_by_id,
         list_users, update_user, delete_user, ensure_admin_exists,
@@ -43,7 +43,7 @@ except ModuleNotFoundError:
         insert_document, insert_chunks, get_session_document_count,
         get_session_documents, delete_document,
         save_chat_message, get_chat_history, clear_chat_history,
-        save_pii_result, save_sentiment_result,
+        save_pii_result,
         save_ocr_result, save_classifier_result,
         create_user, authenticate_user, get_user_by_id,
         list_users, update_user, delete_user, ensure_admin_exists,
@@ -118,13 +118,6 @@ TOOLS = [
         "title": "PII Extractor",
         "badge": "LLM Powered",
         "icon": "ID",
-    },
-    {
-        "id": "sentiment",
-        "title": "Sentiment",
-        "page_title": "Sentiment Analysis",
-        "badge": "LLM Powered",
-        "icon": "SEN",
     },
     {
         "id": "classify",
@@ -493,7 +486,7 @@ def chat_stream():
     return Response(stream_with_context(gen()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
 
-# ── PII, OCR, Sentiment, Classifier routes ────────────────────────────────────
+# ── Financial Extractor, OCR, Classifier routes ───────────────────────────────
 
 @app.post("/api/pii/extract")
 @require_role("admin", "staff")
@@ -550,74 +543,6 @@ def ocr_extract():
         return jsonify({"error": str(exc)}), 503
     except Exception as exc:
         return jsonify({"error": f"OCR failed: {str(exc)}"}), 500
-
-
-SENTIMENT_CHAR_LIMIT = 3000
-
-
-@app.post("/api/sentiment/analyze")
-@require_role("admin", "staff")
-def sentiment_analyze():
-    """Analyze sentiment of text or documents."""
-    text = (request.form.get("text") or "").strip()
-    documents = request.files.getlist("documents")
-
-    if not text and not documents:
-        return jsonify({"error": "Provide text or upload documents"}), 400
-    if text and documents:
-        return jsonify({"error": "Provide either text or documents, not both."}), 400
-
-    try:
-        combined_text = ""
-        source = None
-
-        if documents:
-            chunks = load_documents(documents)
-            if chunks:
-                combined_text = " ".join(chunk.text for chunk in chunks)
-                source = "document"
-            else:
-                return jsonify({"error": "No readable text found. If scanned PDF, run OCR first."}), 400
-
-        if text:
-            combined_text = text
-            source = "text"
-
-        normalized_text = " ".join(combined_text.split())
-        original_length = len(normalized_text)
-        truncated = original_length > SENTIMENT_CHAR_LIMIT
-        normalized_text = normalized_text[:SENTIMENT_CHAR_LIMIT]
-
-        system_prompt = (
-            "You are a sentiment analysis assistant for legal document review. Analyze the sentiment of the given text. "
-            "Return ONLY a valid JSON object with these exact fields:\n"
-            "{\n"
-            "  \"sentiment\": \"Positive\" | \"Negative\" | \"Neutral\",\n"
-            "  \"confidence\": integer 0-100,\n"
-            "  \"tone\": single word descriptor,\n"
-            "  \"reasoning\": 1-2 sentence explanation\n"
-            "}\n"
-            "This is for legal eDiscovery context — flag hostile or adversarial tone especially."
-        )
-
-        response = generate_completion(normalized_text, system_prompt=system_prompt)
-        sentiment_data = parse_llm_json(response)
-        if not isinstance(sentiment_data, dict):
-            raise ValueError("LLM response must be a JSON object.")
-
-        result = {**sentiment_data, "source": source, "char_count": len(normalized_text)}
-        if truncated:
-            result["warning"] = f"Text truncated from {original_length} to {SENTIMENT_CHAR_LIMIT} chars."
-
-        session_db_id = _get_session_db_id()
-        save_sentiment_result(session_db_id, normalized_text, result)
-        return jsonify(result)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 503
-    except Exception as exc:
-        return jsonify({"error": f"Sentiment analysis failed: {str(exc)}"}), 500
 
 
 @app.post("/api/classify/documents")
