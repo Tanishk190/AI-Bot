@@ -291,6 +291,55 @@ function renderTables(text) {
   return out.join("\n");
 }
 
+// Parse markdown lists line-by-line. Handles numbered "headings" that each
+// carry bullet sub-items (so the <ol> renumbers 1,2,3 even though bullets sit
+// between the numbered lines), plus plain bullet and plain numbered lists.
+function renderLists(text) {
+  const lines = text.split("\n");
+  const ordered = /^\d+\.\s+/;
+  const bullet = /^[-*]\s+/;
+  const out = [];
+  let i = 0;
+
+  const collectBullets = () => {
+    let items = "";
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (bullet.test(t)) { items += `<li>${t.replace(bullet, "")}</li>`; i++; }
+      else if (t === "") { i++; }            // blank lines don't break the list
+      else break;
+    }
+    return items;
+  };
+
+  while (i < lines.length) {
+    const t = lines[i].trim();
+
+    if (ordered.test(t)) {
+      let ol = "<ol>";
+      while (i < lines.length) {
+        const line = lines[i].trim();
+        if (ordered.test(line)) {
+          i++;
+          const sub = collectBullets();          // bullets nested under this item
+          ol += `<li>${line.replace(ordered, "")}${sub ? `<ul>${sub}</ul>` : ""}</li>`;
+        } else if (line === "") {
+          i++;
+        } else {
+          break;
+        }
+      }
+      out.push(ol + "</ol>");
+    } else if (bullet.test(t)) {
+      out.push(`<ul>${collectBullets()}</ul>`);
+    } else {
+      out.push(lines[i]);
+      i++;
+    }
+  }
+  return out.join("\n");
+}
+
 function renderMarkdown(text) {
   if (!text) return "";
   let html = text
@@ -313,23 +362,9 @@ function renderMarkdown(text) {
   html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
   html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
 
-  // Unordered lists (items may be separated by blank lines)
-  html = html.replace(/(^|\n)(- .+(?:\n+- .+)*)/g, (_, pre, block) => {
-    const items = block.split("\n")
-      .filter((l) => /^-\s/.test(l.trim()))
-      .map((l) => `<li>${l.trim().replace(/^-\s/, "")}</li>`)
-      .join("");
-    return `${pre}<ul>${items}</ul>`;
-  });
-  // Ordered lists — group consecutive numbered items (even across blank lines)
-  // into one <ol> so the browser renumbers them 1,2,3… instead of 1,1,1…
-  html = html.replace(/(^|\n)(\d+\. .+(?:\n+\d+\. .+)*)/g, (_, pre, block) => {
-    const items = block.split("\n")
-      .filter((l) => /^\d+\.\s/.test(l.trim()))
-      .map((l) => `<li>${l.trim().replace(/^\d+\.\s/, "")}</li>`)
-      .join("");
-    return `${pre}<ol>${items}</ol>`;
-  });
+  // Lists (ordered + nested bullets) — renders 1,2,3 even when bullets sit
+  // between the numbered items
+  html = renderLists(html);
 
   // Line breaks (but not inside lists/pre)
   html = html.replace(/\n/g, "<br>");
