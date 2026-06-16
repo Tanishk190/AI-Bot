@@ -249,12 +249,57 @@ if (kbSelectAll) {
 loadDocumentList();
 
 // ── Markdown renderer ────────────────────────────────────────────────────────
+// Split a markdown table row "| a | b |" into trimmed cells
+function splitTableRow(line) {
+  const cells = line.split("|").map((c) => c.trim());
+  if (cells.length && cells[0] === "") cells.shift();
+  if (cells.length && cells[cells.length - 1] === "") cells.pop();
+  return cells;
+}
+
+// A separator row is all dash cells, e.g. "|---|:--:|"
+function isTableSeparator(line) {
+  if (!/\|/.test(line)) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+}
+
+// Convert GitHub-style markdown tables into HTML tables
+function renderTables(text) {
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/\|/.test(lines[i]) && isTableSeparator(lines[i + 1] || "")) {
+      const header = splitTableRow(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim() !== "") {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      const thead = header.map((h) => `<th>${h}</th>`).join("");
+      const tbody = rows
+        .map((r) => `<tr>${header.map((_, c) => `<td>${r[c] || ""}</td>`).join("")}</tr>`)
+        .join("");
+      out.push(`<table class="md-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`);
+      continue;
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join("\n");
+}
+
 function renderMarkdown(text) {
   if (!text) return "";
   let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+  // Tables (before line breaks/lists so the pipes aren't mangled)
+  html = renderTables(html);
 
   // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="md-code"><code>$2</code></pre>');
@@ -289,8 +334,8 @@ function renderMarkdown(text) {
   // Line breaks (but not inside lists/pre)
   html = html.replace(/\n/g, "<br>");
   // Clean up double breaks from block elements
-  html = html.replace(/<br><(ul|ol|pre|div)/g, "<$1");
-  html = html.replace(/<\/(ul|ol|pre|div)><br>/g, "</$1>");
+  html = html.replace(/<br><(ul|ol|pre|div|table)/g, "<$1");
+  html = html.replace(/<\/(ul|ol|pre|div|table)><br>/g, "</$1>");
 
   return html;
 }
