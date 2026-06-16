@@ -145,14 +145,31 @@ def get_user_count() -> int:
 
 
 def ensure_admin_exists():
-    """Create default admin from env vars if no users exist."""
+    """Seed the initial admin from env vars if no users exist.
+
+    Refuses to create an account with a weak or missing ADMIN_PASSWORD so a
+    public deployment never ships with the guessable admin/admin default. For
+    local development, set ALLOW_INSECURE_ADMIN=1 to bypass the check.
+    """
     if get_user_count() > 0:
         return
     email = os.getenv("ADMIN_EMAIL", "admin@documind.local")
-    password = os.getenv("ADMIN_PASSWORD", "admin")
+    password = os.getenv("ADMIN_PASSWORD", "")
     name = os.getenv("ADMIN_NAME", "Admin")
+
+    allow_insecure = os.getenv("ALLOW_INSECURE_ADMIN", "").lower() in ("1", "true", "yes")
+    weak = (not password) or password.lower() == "admin" or len(password) < 8
+    if weak and not allow_insecure:
+        raise RuntimeError(
+            "Refusing to seed the initial admin with a weak/missing ADMIN_PASSWORD. "
+            "Set a strong ADMIN_PASSWORD (8+ chars, not 'admin') before first run, "
+            "or set ALLOW_INSECURE_ADMIN=1 for local development only."
+        )
+    if not password:
+        password = "admin"  # only reachable when ALLOW_INSECURE_ADMIN is set
+
     create_user(email, password, name, role="admin")
-    print(f"Default admin created: {email}")
+    print(f"Initial admin created: {email}")
 
 
 # ── Sessions ──────────────────────────────────────────────────────────────────
