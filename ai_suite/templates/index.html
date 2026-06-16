@@ -159,25 +159,34 @@
           </section>
 
           <section class="panel" id="panel-pii" aria-labelledby="pii-label">
-            <div class="section-label" id="pii-label">Prompt Configuration</div>
+            <div class="section-label" id="pii-label">Extraction Schema</div>
 
             <div class="prompt-editor">
-              <label for="pii-system-prompt">System Prompt:</label>
-              <textarea id="pii-system-prompt" class="textarea-field" rows="4">You are a PII (Personally Identifiable Information) extraction specialist. Extract all personal and sensitive information from the given text. Return ONLY a valid JSON object with the fields: name, email, phone, dob, address, ssn, organization, other. If a field is not found, set it to null. Be thorough and accurate.</textarea>
+              <label for="pii-system-prompt">Extraction instructions (system prompt):</label>
+              <textarea id="pii-system-prompt" class="textarea-field" rows="6">You are a financial document extraction specialist for a Chartered Accountancy / audit firm. Extract key entities from the given text. Return ONLY a valid JSON object with these fields:
+- organization: primary company or entity name
+- parties: array of other named persons or firms, each as "Role: Name" (e.g. "Auditor: ABC & Associates")
+- identifiers: array of registration / tax IDs, each as "Label: value" (e.g. "PAN: ABCDE1234F", "GSTIN: 27ABCDE1234F1Z5", "CIN: U12345MH2010PTC123456", "TAN: MUMA12345B")
+- amounts: array of monetary figures with context, each as "Label: value" (e.g. "Taxable Value: 1,00,000", "GST: 18,000", "Invoice Total: 1,18,000")
+- dates: array of key dates, each as "Label: value" (e.g. "Invoice Date: 10-Apr-2025")
+- address: registered or billing address
+- other: array of any other relevant items
+Rules: use null for missing single values and [] for missing arrays. NEVER nest objects — every value must be a string, null, or an array of strings. Do not invent values that are not in the text. Return only the JSON.</textarea>
             </div>
 
             <div class="prompt-editor">
-              <label for="pii-input-text">Input Paragraph:</label>
-              <textarea id="pii-input-text" class="textarea-field" rows="6" placeholder="Paste a paragraph to extract PII from...">John Smith, born on June 3 1990, lives at 42 Elm Street, New York. His email is john.smith@email.com and phone is (555) 123-4567. He works at Acme Corp and his SSN is 123-45-6789.</textarea>
+              <label for="pii-input-text">Document text:</label>
+              <textarea id="pii-input-text" class="textarea-field" rows="6" placeholder="Paste invoice / financial document text here...">Invoice from XYZ Private Limited (CIN: U12345MH2010PTC123456), GSTIN 27ABCDE1234F1Z5, PAN ABCDE1234F, registered at 404 Business Park, Andheri East, Mumbai 400069. Invoice No. INV-2025-0042 dated 10-Apr-2025. Taxable value 1,00,000, GST @18% 18,000, Invoice Total 1,18,000. Audited by ABC & Associates (FRN: 123456W).</textarea>
             </div>
 
-            <button class="run-btn" id="pii-extract-btn" type="button">Extract PII</button>
+            <button class="run-btn" id="pii-extract-btn" type="button">Extract</button>
 
-            <div class="section-label with-space">PII Output</div>
+            <div class="section-label with-space">Extracted Fields</div>
             <div class="table-box" id="pii-output">
               <div class="table-empty">Run extraction to see results.</div>
             </div>
             <div class="action-row">
+              <button type="button" id="pii-csv-btn">Download CSV (Excel)</button>
               <button type="button" id="pii-download-btn">Download JSON</button>
               <button type="button" id="pii-copy-btn">Copy JSON</button>
             </div>

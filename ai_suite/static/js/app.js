@@ -503,15 +503,61 @@ if (chatForm) {
   });
 }
 
-// ── PII Extractor ─────────────────────────────────────────────────────────────
+// ── Financial Extractor ───────────────────────────────────────────────────────
 const piiSystemPrompt = document.querySelector("#pii-system-prompt");
 const piiInputText    = document.querySelector("#pii-input-text");
 const piiExtractBtn   = document.querySelector("#pii-extract-btn");
 const piiOutput       = document.querySelector("#pii-output");
 const piiDownloadBtn  = document.querySelector("#pii-download-btn");
+const piiCsvBtn       = document.querySelector("#pii-csv-btn");
 const piiCopyBtn      = document.querySelector("#pii-copy-btn");
 
 let lastPiiData = null;
+
+// Stringify a scalar or array-of-scalars to a single readable cell value
+function valueToText(v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (Array.isArray(v)) return v.map(valueToText).filter(Boolean).join("; ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+// A flat field map = object whose values are all scalars or arrays of scalars
+function isFlatFieldMap(data) {
+  return (
+    data && typeof data === "object" && !Array.isArray(data) &&
+    Object.values(data).every((v) => v === null || typeof v !== "object" || Array.isArray(v))
+  );
+}
+
+function renderFieldValueTable(data) {
+  const table = document.createElement("table");
+  table.className = "pii-table";
+
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  ["Field", "Value"].forEach((c) => {
+    const th = document.createElement("th");
+    th.textContent = c;
+    hr.append(th);
+  });
+  thead.append(hr);
+
+  const tbody = document.createElement("tbody");
+  Object.entries(data).forEach(([key, value]) => {
+    const tr = document.createElement("tr");
+    const tdK = document.createElement("td");
+    tdK.textContent = key;
+    const tdV = document.createElement("td");
+    tdV.textContent = valueToText(value) || "—";
+    tr.append(tdK, tdV);
+    tbody.append(tr);
+  });
+
+  table.append(thead, tbody);
+  piiOutput.innerHTML = "";
+  piiOutput.append(table);
+}
 
 function normalizePiiEntities(data) {
   if (!data) return [];
@@ -545,15 +591,21 @@ function normalizePiiEntities(data) {
 
 function formatPiiCell(value) {
   if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "object") return JSON.stringify(value) ?? String(value);
-  return String(value);
+  return valueToText(value) || "—";
 }
 
 function renderPiiTable(data) {
   if (!piiOutput) return;
+
+  // Flat schemas (the default financial extractor) render as a Field / Value table
+  if (isFlatFieldMap(data)) {
+    renderFieldValueTable(data);
+    return;
+  }
+
   const entities = normalizePiiEntities(data);
   if (!entities.length) {
-    piiOutput.innerHTML = '<div class="table-empty">No PII entities found.</div>';
+    piiOutput.innerHTML = '<div class="table-empty">No entities found.</div>';
     return;
   }
 
@@ -600,11 +652,11 @@ if (piiExtractBtn) {
     const text = piiInputText.value.trim();
     const systemPrompt = piiSystemPrompt.value.trim();
 
-    if (!text)         { piiOutput.textContent = "❌ Error: Input text is required."; return; }
-    if (!systemPrompt) { piiOutput.textContent = "❌ Error: System prompt is required."; return; }
+    if (!text)         { piiOutput.textContent = "❌ Error: Document text is required."; return; }
+    if (!systemPrompt) { piiOutput.textContent = "❌ Error: Extraction instructions are required."; return; }
 
     piiExtractBtn.disabled = true;
-    piiOutput.textContent = "⏳ Extracting PII...";
+    piiOutput.textContent = "⏳ Extracting…";
 
     try {
       const response = await fetch("/api/pii/extract", {
@@ -614,7 +666,7 @@ if (piiExtractBtn) {
       });
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error || "PII extraction failed.");
+      if (!response.ok) throw new Error(data.error || "Extraction failed.");
 
       let piiData = data.data;
       if (typeof piiData === "string") piiData = JSON.parse(piiData);
@@ -630,7 +682,7 @@ if (piiExtractBtn) {
 
 if (piiCopyBtn) {
   piiCopyBtn.addEventListener("click", () => {
-    if (!lastPiiData) { alert("Extract PII first"); return; }
+    if (!lastPiiData) { alert("Extract first"); return; }
     navigator.clipboard.writeText(JSON.stringify(lastPiiData, null, 2)).then(() => {
       piiCopyBtn.textContent = "✓ Copied!";
       setTimeout(() => { piiCopyBtn.textContent = "Copy JSON"; }, 2000);
@@ -638,16 +690,53 @@ if (piiCopyBtn) {
   });
 }
 
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 if (piiDownloadBtn) {
   piiDownloadBtn.addEventListener("click", () => {
-    if (!lastPiiData) { alert("Extract PII first"); return; }
-    const blob = new Blob([JSON.stringify(lastPiiData, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url;
-    a.download = "pii_extraction.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!lastPiiData) { alert("Extract first"); return; }
+    downloadBlob(JSON.stringify(lastPiiData, null, 2), "extraction.json", "application/json");
+  });
+}
+
+// Quote a CSV field per RFC 4180
+function csvCell(value) {
+  const s = valueToText(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildCsv(data) {
+  // Flat field map → two-column Field,Value sheet
+  if (isFlatFieldMap(data)) {
+    const rows = [["Field", "Value"]];
+    Object.entries(data).forEach(([k, v]) => rows.push([k, valueToText(v)]));
+    return rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  }
+  // Otherwise: tabular entity list with a column per key
+  const entities = normalizePiiEntities(data).map((e) =>
+    e && typeof e === "object" && !Array.isArray(e) ? e : { value: e }
+  );
+  const columns = [];
+  entities.forEach((e) => Object.keys(e).forEach((k) => { if (!columns.includes(k)) columns.push(k); }));
+  if (!columns.length) columns.push("value");
+  const rows = [columns];
+  entities.forEach((e) => rows.push(columns.map((c) => valueToText(e[c]))));
+  return rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+}
+
+if (piiCsvBtn) {
+  piiCsvBtn.addEventListener("click", () => {
+    if (!lastPiiData) { alert("Extract first"); return; }
+    // Prepend a UTF-8 BOM so Excel reads ₹ and other symbols correctly
+    downloadBlob("﻿" + buildCsv(lastPiiData), "extraction.csv", "text/csv;charset=utf-8");
   });
 }
 

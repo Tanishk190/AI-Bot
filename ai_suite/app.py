@@ -115,9 +115,10 @@ TOOLS = [
     },
     {
         "id": "pii",
-        "title": "PII Extractor",
-        "badge": "LLM Powered",
-        "icon": "ID",
+        "title": "Financial Extractor",
+        "page_title": "Financial Document Extractor",
+        "badge": "Entity Extraction",
+        "icon": "FIN",
     },
     {
         "id": "classify",
