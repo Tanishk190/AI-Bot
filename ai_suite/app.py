@@ -391,7 +391,7 @@ def chat_message():
         save_chat_message(session_db_id, "user", question)
 
         relevant = retrieve_relevant_chunks_db(
-            question, session_db_id, k=3, document_ids=document_ids
+            question, session_db_id, k=8, document_ids=document_ids
         )
         if not relevant:
             answer = "I could not find relevant context in the uploaded documents."
@@ -451,7 +451,7 @@ def chat_stream():
     try:
         save_chat_message(session_db_id, "user", question)
         relevant = retrieve_relevant_chunks_db(
-            question, session_db_id, k=3, document_ids=document_ids
+            question, session_db_id, k=8, document_ids=document_ids
         )
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503

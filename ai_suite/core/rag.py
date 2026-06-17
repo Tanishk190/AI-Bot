@@ -1,7 +1,9 @@
 """RAG pipeline for document retrieval and chunking."""
 from dataclasses import dataclass
+from collections import Counter
 import hashlib
 import json
+import math
 import os
 import re
 from openai import OpenAI, APIError, APIConnectionError
@@ -70,58 +72,120 @@ def embed_session_chunks(session_db_id: int):
             update_chunk_embedding(row["text_hash"], embedding)
 
 
-def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 3,
-                                document_ids: list[int] | None = None) -> list[Chunk]:
-    """Retrieve relevant chunks using cosine similarity from DB-stored embeddings."""
-    chunk_rows = get_chunks_by_session(session_db_id, document_ids=document_ids)
-    if not chunk_rows:
-        return []
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
 
+
+def _keyword_scores(question: str, chunk_rows: list[dict]) -> list[float]:
+    """BM25 keyword score for every chunk against the query.
+
+    Gives proper weight to rare, high-signal terms (e.g. "269ss", "cheque")
+    so keyword matches surface relevant chunks the embedding ranking may miss.
+    """
+    q_terms = set(_tokenize(question))
+    docs = [_tokenize(r["text"]) for r in chunk_rows]
+    n = len(docs)
+    if n == 0 or not q_terms:
+        return [0.0] * n
+
+    avgdl = sum(len(d) for d in docs) / n or 1.0
+    df: dict[str, int] = {}
+    for d in docs:
+        for term in set(d):
+            df[term] = df.get(term, 0) + 1
+
+    k1, b = 1.5, 0.75
+    scores = []
+    for d in docs:
+        tf = Counter(d)
+        dl = len(d) or 1
+        score = 0.0
+        for term in q_terms:
+            freq = tf.get(term, 0)
+            if freq:
+                idf = math.log(1 + (n - df[term] + 0.5) / (df[term] + 0.5))
+                score += idf * (freq * (k1 + 1)) / (freq + k1 * (1 - b + b * dl / avgdl))
+        scores.append(score)
+    return scores
+
+
+def _semantic_scores(question: str, chunk_rows: list[dict]) -> list[float] | None:
+    """Cosine similarity per chunk, or None if embeddings are unavailable."""
     try:
         import numpy as np
-        question_embedding = _get_embedding(question)
-        q_vec = np.array(question_embedding)
+        q_vec = np.array(_get_embedding(question))
         q_norm = np.linalg.norm(q_vec)
-
-        scored = []
-        query_words = set(question.lower().split())
-
+        scores, any_emb = [], False
         for row in chunk_rows:
             emb = row["embedding"]
             if emb is None:
+                scores.append(0.0)
                 continue
             if isinstance(emb, str):
                 emb = json.loads(emb)
             c_vec = np.array(emb)
-            similarity = float(np.dot(q_vec, c_vec) / (q_norm * np.linalg.norm(c_vec)))
-
-            chunk_words = set(row["text"].lower().split())
-            keyword_boost = 0.1 if query_words & chunk_words else 0
-            scored.append((row, similarity + keyword_boost))
-
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [
-            Chunk(text=row["text"], source=row["source"], index=row["chunk_index"], page=row.get("page"))
-            for row, _ in scored[:k]
-        ]
+            scores.append(float(np.dot(q_vec, c_vec) / (q_norm * np.linalg.norm(c_vec))))
+            any_emb = True
+        return scores if any_emb else None
     except Exception as e:
-        print(f"Semantic search failed: {e}. Falling back to BM25.")
+        print(f"Semantic scoring failed: {e}. Using keyword-only ranking.")
+        return None
 
-    return _bm25_retrieval_db(question, chunk_rows, k)
+
+def _normalize(values: list[float]) -> list[float]:
+    lo, hi = min(values), max(values)
+    if hi <= lo:
+        return [0.0] * len(values)
+    return [(v - lo) / (hi - lo) for v in values]
 
 
-def _bm25_retrieval_db(question: str, chunk_rows: list[dict], k: int) -> list[Chunk]:
-    query_words = set(question.lower().split())
-    scored = []
-    for row in chunk_rows:
-        chunk_words = set(row["text"].lower().split())
-        overlap = len(query_words & chunk_words)
-        if overlap > 0:
-            scored.append((row, overlap))
-    scored.sort(key=lambda x: x[1], reverse=True)
+def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 8,
+                                document_ids: list[int] | None = None,
+                                per_page_cap: int = 3,
+                                semantic_weight: float = 0.6) -> list[Chunk]:
+    """Hybrid retrieval over DB-stored chunks.
+
+    Combines normalized semantic similarity with a BM25 keyword score, then
+    spreads the results across pages (``per_page_cap``) so multi-clause queries
+    aren't dominated by a single dense page.
+    """
+    chunk_rows = get_chunks_by_session(session_db_id, document_ids=document_ids)
+    if not chunk_rows:
+        return []
+
+    keyword = _normalize(_keyword_scores(question, chunk_rows))
+    semantic = _semantic_scores(question, chunk_rows)
+    if semantic is not None:
+        semantic = _normalize(semantic)
+        combined = [semantic_weight * s + (1 - semantic_weight) * w
+                    for s, w in zip(semantic, keyword)]
+    else:
+        combined = keyword
+
+    order = sorted(range(len(chunk_rows)), key=lambda i: combined[i], reverse=True)
+
+    # Page diversity: take the best chunks but cap how many come from one page
+    selected, per_page = [], {}
+    for i in order:
+        page = chunk_rows[i].get("page")
+        if per_page.get(page, 0) >= per_page_cap:
+            continue
+        selected.append(i)
+        per_page[page] = per_page.get(page, 0) + 1
+        if len(selected) >= k:
+            break
+    # Backfill if the per-page cap left us short of k
+    if len(selected) < k:
+        for i in order:
+            if i not in selected:
+                selected.append(i)
+                if len(selected) >= k:
+                    break
+
     return [
-        Chunk(text=row["text"], source=row["source"], index=row["chunk_index"], page=row.get("page"))
-        for row, _ in scored[:k]
+        Chunk(text=chunk_rows[i]["text"], source=chunk_rows[i]["source"],
+              index=chunk_rows[i]["chunk_index"], page=chunk_rows[i].get("page"))
+        for i in selected
     ]
 
 
