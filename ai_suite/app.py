@@ -55,6 +55,17 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 app.secret_key = os.getenv("SECRET_KEY", uuid.uuid4().hex)
 
+# Session cookie hardening. Secure is enabled in production (Render sets the
+# RENDER env var automatically) so the cookie is HTTPS-only there, while local
+# HTTP development still works. SameSite=Lax blocks the cookie on cross-site
+# POST/DELETE requests, which mitigates CSRF.
+_is_production = os.getenv("RENDER") is not None or os.getenv("APP_ENV") == "production"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_is_production,
+)
+
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
