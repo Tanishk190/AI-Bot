@@ -398,6 +398,34 @@ button:disabled, input:disabled { cursor: not-allowed; opacity: .55; }
 }
 .bubble.ai .md-inline { padding: 1px 5px; background: var(--color-background-page); border-radius: 3px; font-family: var(--font-mono); font-size: 12px; }
 
+/* Markdown tables in AI answers */
+.bubble.ai .md-table {
+  width: 100%;
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  background: var(--color-background-primary);
+  border: 1px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}
+.bubble.ai .md-table th,
+.bubble.ai .md-table td {
+  padding: 7px 11px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-tertiary);
+  vertical-align: top;
+}
+.bubble.ai .md-table th {
+  background: var(--color-background-secondary);
+  font-weight: 650;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+.bubble.ai .md-table tbody tr:last-child td { border-bottom: none; }
+.bubble.ai .md-table tbody tr:nth-child(even) { background: var(--color-background-secondary); }
+
 .chat-input-row { display: flex; gap: 8px; }
 
 /* ── Inputs ────────────────────────────────────────────── */

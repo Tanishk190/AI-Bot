@@ -249,12 +249,106 @@ if (kbSelectAll) {
 loadDocumentList();
 
 // ── Markdown renderer ────────────────────────────────────────────────────────
+// Split a markdown table row "| a | b |" into trimmed cells
+function splitTableRow(line) {
+  const cells = line.split("|").map((c) => c.trim());
+  if (cells.length && cells[0] === "") cells.shift();
+  if (cells.length && cells[cells.length - 1] === "") cells.pop();
+  return cells;
+}
+
+// A separator row is all dash cells, e.g. "|---|:--:|"
+function isTableSeparator(line) {
+  if (!/\|/.test(line)) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{1,}:?$/.test(c));
+}
+
+// Convert GitHub-style markdown tables into HTML tables
+function renderTables(text) {
+  const lines = text.split("\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/\|/.test(lines[i]) && isTableSeparator(lines[i + 1] || "")) {
+      const header = splitTableRow(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim() !== "") {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      const thead = header.map((h) => `<th>${h}</th>`).join("");
+      const tbody = rows
+        .map((r) => `<tr>${header.map((_, c) => `<td>${r[c] || ""}</td>`).join("")}</tr>`)
+        .join("");
+      out.push(`<table class="md-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`);
+      continue;
+    }
+    out.push(lines[i]);
+    i++;
+  }
+  return out.join("\n");
+}
+
+// Parse markdown lists line-by-line. Handles numbered "headings" that each
+// carry bullet sub-items (so the <ol> renumbers 1,2,3 even though bullets sit
+// between the numbered lines), plus plain bullet and plain numbered lists.
+function renderLists(text) {
+  const lines = text.split("\n");
+  const ordered = /^\d+\.\s+/;
+  const bullet = /^[-*]\s+/;
+  const out = [];
+  let i = 0;
+
+  const collectBullets = () => {
+    let items = "";
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (bullet.test(t)) { items += `<li>${t.replace(bullet, "")}</li>`; i++; }
+      else if (t === "") { i++; }            // blank lines don't break the list
+      else break;
+    }
+    return items;
+  };
+
+  while (i < lines.length) {
+    const t = lines[i].trim();
+
+    if (ordered.test(t)) {
+      let ol = "<ol>";
+      while (i < lines.length) {
+        const line = lines[i].trim();
+        if (ordered.test(line)) {
+          i++;
+          const sub = collectBullets();          // bullets nested under this item
+          ol += `<li>${line.replace(ordered, "")}${sub ? `<ul>${sub}</ul>` : ""}</li>`;
+        } else if (line === "") {
+          i++;
+        } else {
+          break;
+        }
+      }
+      out.push(ol + "</ol>");
+    } else if (bullet.test(t)) {
+      out.push(`<ul>${collectBullets()}</ul>`);
+    } else {
+      out.push(lines[i]);
+      i++;
+    }
+  }
+  return out.join("\n");
+}
+
 function renderMarkdown(text) {
   if (!text) return "";
   let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+  // Tables (before line breaks/lists so the pipes aren't mangled)
+  html = renderTables(html);
 
   // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="md-code"><code>$2</code></pre>');
@@ -268,24 +362,23 @@ function renderMarkdown(text) {
   html = html.replace(/^### (.+)$/gm, '<div class="md-h3">$1</div>');
   html = html.replace(/^## (.+)$/gm, '<div class="md-h2">$1</div>');
 
-  // Unordered lists
-  html = html.replace(/(^|\n)(- .+(?:\n- .+)*)/g, (_, pre, block) => {
-    const items = block.split("\n").map((l) => `<li>${l.replace(/^- /, "")}</li>`).join("");
-    return `${pre}<ul>${items}</ul>`;
-  });
-  // Ordered lists
-  html = html.replace(/(^|\n)(\d+\. .+(?:\n\d+\. .+)*)/g, (_, pre, block) => {
-    const items = block.split("\n").map((l) => `<li>${l.replace(/^\d+\. /, "")}</li>`).join("");
-    return `${pre}<ol>${items}</ol>`;
-  });
+  // Lists (ordered + nested bullets) — renders 1,2,3 even when bullets sit
+  // between the numbered items
+  html = renderLists(html);
 
   // Line breaks (but not inside lists/pre)
   html = html.replace(/\n/g, "<br>");
   // Clean up double breaks from block elements
-  html = html.replace(/<br><(ul|ol|pre|div)/g, "<$1");
-  html = html.replace(/<\/(ul|ol|pre|div)><br>/g, "</$1>");
+  html = html.replace(/<br><(ul|ol|pre|div|table)/g, "<$1");
+  html = html.replace(/<\/(ul|ol|pre|div|table)><br>/g, "</$1>");
 
   return html;
+}
+
+// Citation pill label, e.g. "audit.pdf · p.3 · #9"
+function sourceLabel(s) {
+  const page = s.page ? ` · p.${s.page}` : "";
+  return `${s.source}${page} · #${s.chunk}`;
 }
 
 function appendMessage(role, text, sources) {
@@ -314,7 +407,7 @@ function appendMessage(role, text, sources) {
     sources.forEach((s) => {
       const pill = document.createElement("span");
       pill.className = "source-pill";
-      pill.textContent = `${s.source} #${s.chunk}`;
+      pill.textContent = sourceLabel(s);
       srcRow.append(pill);
     });
     bubble.append(srcRow);
@@ -488,7 +581,7 @@ if (chatForm) {
         sources.forEach((s) => {
           const pill = document.createElement("span");
           pill.className = "source-pill";
-          pill.textContent = `${s.source} #${s.chunk}`;
+          pill.textContent = sourceLabel(s);
           srcRow.append(pill);
         });
         pendingBubble.append(srcRow);
@@ -503,15 +596,61 @@ if (chatForm) {
   });
 }
 
-// ── PII Extractor ─────────────────────────────────────────────────────────────
+// ── Financial Extractor ───────────────────────────────────────────────────────
 const piiSystemPrompt = document.querySelector("#pii-system-prompt");
 const piiInputText    = document.querySelector("#pii-input-text");
 const piiExtractBtn   = document.querySelector("#pii-extract-btn");
 const piiOutput       = document.querySelector("#pii-output");
 const piiDownloadBtn  = document.querySelector("#pii-download-btn");
+const piiCsvBtn       = document.querySelector("#pii-csv-btn");
 const piiCopyBtn      = document.querySelector("#pii-copy-btn");
 
 let lastPiiData = null;
+
+// Stringify a scalar or array-of-scalars to a single readable cell value
+function valueToText(v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (Array.isArray(v)) return v.map(valueToText).filter(Boolean).join("; ");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+// A flat field map = object whose values are all scalars or arrays of scalars
+function isFlatFieldMap(data) {
+  return (
+    data && typeof data === "object" && !Array.isArray(data) &&
+    Object.values(data).every((v) => v === null || typeof v !== "object" || Array.isArray(v))
+  );
+}
+
+function renderFieldValueTable(data) {
+  const table = document.createElement("table");
+  table.className = "pii-table";
+
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  ["Field", "Value"].forEach((c) => {
+    const th = document.createElement("th");
+    th.textContent = c;
+    hr.append(th);
+  });
+  thead.append(hr);
+
+  const tbody = document.createElement("tbody");
+  Object.entries(data).forEach(([key, value]) => {
+    const tr = document.createElement("tr");
+    const tdK = document.createElement("td");
+    tdK.textContent = key;
+    const tdV = document.createElement("td");
+    tdV.textContent = valueToText(value) || "—";
+    tr.append(tdK, tdV);
+    tbody.append(tr);
+  });
+
+  table.append(thead, tbody);
+  piiOutput.innerHTML = "";
+  piiOutput.append(table);
+}
 
 function normalizePiiEntities(data) {
   if (!data) return [];
@@ -545,15 +684,21 @@ function normalizePiiEntities(data) {
 
 function formatPiiCell(value) {
   if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "object") return JSON.stringify(value) ?? String(value);
-  return String(value);
+  return valueToText(value) || "—";
 }
 
 function renderPiiTable(data) {
   if (!piiOutput) return;
+
+  // Flat schemas (the default financial extractor) render as a Field / Value table
+  if (isFlatFieldMap(data)) {
+    renderFieldValueTable(data);
+    return;
+  }
+
   const entities = normalizePiiEntities(data);
   if (!entities.length) {
-    piiOutput.innerHTML = '<div class="table-empty">No PII entities found.</div>';
+    piiOutput.innerHTML = '<div class="table-empty">No entities found.</div>';
     return;
   }
 
@@ -600,11 +745,11 @@ if (piiExtractBtn) {
     const text = piiInputText.value.trim();
     const systemPrompt = piiSystemPrompt.value.trim();
 
-    if (!text)         { piiOutput.textContent = "❌ Error: Input text is required."; return; }
-    if (!systemPrompt) { piiOutput.textContent = "❌ Error: System prompt is required."; return; }
+    if (!text)         { piiOutput.textContent = "❌ Error: Document text is required."; return; }
+    if (!systemPrompt) { piiOutput.textContent = "❌ Error: Extraction instructions are required."; return; }
 
     piiExtractBtn.disabled = true;
-    piiOutput.textContent = "⏳ Extracting PII...";
+    piiOutput.textContent = "⏳ Extracting…";
 
     try {
       const response = await fetch("/api/pii/extract", {
@@ -614,7 +759,7 @@ if (piiExtractBtn) {
       });
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error || "PII extraction failed.");
+      if (!response.ok) throw new Error(data.error || "Extraction failed.");
 
       let piiData = data.data;
       if (typeof piiData === "string") piiData = JSON.parse(piiData);
@@ -630,7 +775,7 @@ if (piiExtractBtn) {
 
 if (piiCopyBtn) {
   piiCopyBtn.addEventListener("click", () => {
-    if (!lastPiiData) { alert("Extract PII first"); return; }
+    if (!lastPiiData) { alert("Extract first"); return; }
     navigator.clipboard.writeText(JSON.stringify(lastPiiData, null, 2)).then(() => {
       piiCopyBtn.textContent = "✓ Copied!";
       setTimeout(() => { piiCopyBtn.textContent = "Copy JSON"; }, 2000);
@@ -638,16 +783,53 @@ if (piiCopyBtn) {
   });
 }
 
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 if (piiDownloadBtn) {
   piiDownloadBtn.addEventListener("click", () => {
-    if (!lastPiiData) { alert("Extract PII first"); return; }
-    const blob = new Blob([JSON.stringify(lastPiiData, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url;
-    a.download = "pii_extraction.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!lastPiiData) { alert("Extract first"); return; }
+    downloadBlob(JSON.stringify(lastPiiData, null, 2), "extraction.json", "application/json");
+  });
+}
+
+// Quote a CSV field per RFC 4180
+function csvCell(value) {
+  const s = valueToText(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function buildCsv(data) {
+  // Flat field map → two-column Field,Value sheet
+  if (isFlatFieldMap(data)) {
+    const rows = [["Field", "Value"]];
+    Object.entries(data).forEach(([k, v]) => rows.push([k, valueToText(v)]));
+    return rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+  }
+  // Otherwise: tabular entity list with a column per key
+  const entities = normalizePiiEntities(data).map((e) =>
+    e && typeof e === "object" && !Array.isArray(e) ? e : { value: e }
+  );
+  const columns = [];
+  entities.forEach((e) => Object.keys(e).forEach((k) => { if (!columns.includes(k)) columns.push(k); }));
+  if (!columns.length) columns.push("value");
+  const rows = [columns];
+  entities.forEach((e) => rows.push(columns.map((c) => valueToText(e[c]))));
+  return rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+}
+
+if (piiCsvBtn) {
+  piiCsvBtn.addEventListener("click", () => {
+    if (!lastPiiData) { alert("Extract first"); return; }
+    // Prepend a UTF-8 BOM so Excel reads ₹ and other symbols correctly
+    downloadBlob("﻿" + buildCsv(lastPiiData), "extraction.csv", "text/csv;charset=utf-8");
   });
 }
 
@@ -755,137 +937,6 @@ if (ocrDownloadBtn) {
     a.download = "ocr_text.txt";
     a.click();
     URL.revokeObjectURL(url);
-  });
-}
-
-// ── Sentiment Analysis ────────────────────────────────────────────────────────
-const sentimentDocuments = document.querySelector("#sentiment-documents");
-const sentimentFileStatus = document.querySelector("#sentiment-file-status");
-const sentimentTextarea = document.querySelector("#sentiment-textarea");
-const sentimentAnalyzeBtn = document.querySelector("#sentiment-analyze-btn");
-const sentimentStatus = document.querySelector("#sentiment-status");
-const sentimentVal = document.querySelector("#sentiment-val");
-const confidenceVal = document.querySelector("#confidence-val");
-const toneVal = document.querySelector("#tone-val");
-const reasoningText = document.querySelector("#reasoning-text");
-const positiveMeter = document.querySelector("#positive-meter");
-const neutralMeter = document.querySelector("#neutral-meter");
-const negativeMeter = document.querySelector("#negative-meter");
-const positivePercent = document.querySelector("#positive-percent");
-const neutralPercent = document.querySelector("#neutral-percent");
-const negativePercent = document.querySelector("#negative-percent");
-
-if (sentimentDocuments) {
-  sentimentDocuments.addEventListener("change", () => {
-    const count = sentimentDocuments.files.length;
-    if (!sentimentFileStatus) return;
-    if (count === 0) {
-      sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
-      return;
-    }
-    if (sentimentTextarea) sentimentTextarea.value = "";
-    const names = Array.from(sentimentDocuments.files).map((file) => file.name).join(", ");
-    sentimentFileStatus.textContent = `Selected: ${names}`;
-  });
-}
-
-if (sentimentTextarea) {
-  sentimentTextarea.addEventListener("input", () => {
-    const text = sentimentTextarea.value.trim();
-    if (!sentimentDocuments) return;
-    if (!text) {
-      if (sentimentFileStatus) sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
-      return;
-    }
-    if (sentimentDocuments.files.length > 0) {
-      sentimentDocuments.value = "";
-      if (sentimentFileStatus) sentimentFileStatus.textContent = "No documents selected. Click 🗁 to upload.";
-    }
-    if (sentimentFileStatus) sentimentFileStatus.textContent = "Using text input.";
-  });
-}
-
-if (sentimentAnalyzeBtn) {
-  sentimentAnalyzeBtn.addEventListener("click", async () => {
-    const text = sentimentTextarea ? sentimentTextarea.value.trim() : "";
-    const hasDocuments = sentimentDocuments && sentimentDocuments.files.length > 0;
-
-    if (!text && !hasDocuments) {
-      if (sentimentStatus) {
-        sentimentStatus.textContent = "❌ Error: Provide text or upload documents";
-        sentimentStatus.dataset.state = "error";
-      }
-      return;
-    }
-    if (text && hasDocuments) {
-      if (sentimentStatus) {
-        sentimentStatus.textContent = "❌ Error: Provide either text or documents, not both.";
-        sentimentStatus.dataset.state = "error";
-      }
-      return;
-    }
-
-    sentimentAnalyzeBtn.disabled = true;
-    sentimentAnalyzeBtn.textContent = "Analyzing...";
-    if (sentimentStatus) {
-      sentimentStatus.textContent = "";
-      sentimentStatus.dataset.state = "";
-    }
-
-    try {
-      const formData = new FormData();
-      if (text) formData.append("text", text);
-      if (hasDocuments) {
-        Array.from(sentimentDocuments.files).forEach((file) => formData.append("documents", file));
-      }
-
-      const response = await fetch("/api/sentiment/analyze", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await parseJsonResponse(response);
-
-      if (!response.ok) throw new Error(data.error || `Sentiment analysis failed (${response.status}).`);
-
-      const sentiment = data.sentiment;
-      if (sentimentVal) {
-        sentimentVal.textContent = sentiment;
-        sentimentVal.className = "sent-val";
-        sentimentVal.style.color = "";
-        if (sentiment === "Positive") sentimentVal.classList.add("pos");
-        if (sentiment === "Negative") sentimentVal.style.color = "var(--red)";
-        if (sentiment === "Neutral") sentimentVal.style.color = "var(--gray)";
-      }
-
-      const confidence = data.confidence;
-      if (confidenceVal) confidenceVal.textContent = `${confidence}%`;
-      if (toneVal) toneVal.textContent = data.tone;
-      if (reasoningText) reasoningText.textContent = data.reasoning;
-
-      if (positiveMeter && neutralMeter && negativeMeter) {
-        positiveMeter.style.width = sentiment === "Positive" ? `${confidence}%` : "10%";
-        neutralMeter.style.width = sentiment === "Neutral" ? `${confidence}%` : "10%";
-        negativeMeter.style.width = sentiment === "Negative" ? `${confidence}%` : "10%";
-      }
-      if (positivePercent) positivePercent.textContent = (sentiment === "Positive" ? confidence : 10) + "%";
-      if (neutralPercent) neutralPercent.textContent = (sentiment === "Neutral" ? confidence : 10) + "%";
-      if (negativePercent) negativePercent.textContent = (sentiment === "Negative" ? confidence : 10) + "%";
-
-      if (sentimentStatus) {
-        let statusMsg = `Analyzed from: ${data.source} · ${data.char_count} characters`;
-        if (data.warning) statusMsg += ` · ⚠️ ${data.warning}`;
-        sentimentStatus.textContent = statusMsg;
-        sentimentStatus.dataset.state = data.warning ? "warning" : "success";
-      }
-    } catch (error) {
-      if (sentimentStatus) {
-        sentimentStatus.textContent = `❌ Error: ${error.message}`;
-        sentimentStatus.dataset.state = "error";
-      }
-    } finally {
-      sentimentAnalyzeBtn.disabled = false;
-      sentimentAnalyzeBtn.textContent = "Analyze";
-    }
   });
 }
 

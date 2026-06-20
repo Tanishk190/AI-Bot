@@ -23,7 +23,7 @@ try:
         insert_document, insert_chunks, get_session_document_count,
         get_session_documents, delete_document,
         save_chat_message, get_chat_history, clear_chat_history,
-        save_pii_result, save_sentiment_result,
+        save_pii_result,
         save_ocr_result, save_classifier_result,
         create_user, authenticate_user, get_user_by_id,
         list_users, update_user, delete_user, ensure_admin_exists,
@@ -43,7 +43,7 @@ except ModuleNotFoundError:
         insert_document, insert_chunks, get_session_document_count,
         get_session_documents, delete_document,
         save_chat_message, get_chat_history, clear_chat_history,
-        save_pii_result, save_sentiment_result,
+        save_pii_result,
         save_ocr_result, save_classifier_result,
         create_user, authenticate_user, get_user_by_id,
         list_users, update_user, delete_user, ensure_admin_exists,
@@ -54,6 +54,17 @@ except ModuleNotFoundError:
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 app.secret_key = os.getenv("SECRET_KEY", uuid.uuid4().hex)
+
+# Session cookie hardening. Secure is enabled in production (Render sets the
+# RENDER env var automatically) so the cookie is HTTPS-only there, while local
+# HTTP development still works. SameSite=Lax blocks the cookie on cross-site
+# POST/DELETE requests, which mitigates CSRF.
+_is_production = os.getenv("RENDER") is not None or os.getenv("APP_ENV") == "production"
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_is_production,
+)
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -115,16 +126,10 @@ TOOLS = [
     },
     {
         "id": "pii",
-        "title": "PII Extractor",
-        "badge": "LLM Powered",
-        "icon": "ID",
-    },
-    {
-        "id": "sentiment",
-        "title": "Sentiment",
-        "page_title": "Sentiment Analysis",
-        "badge": "LLM Powered",
-        "icon": "SEN",
+        "title": "Financial Extractor",
+        "page_title": "Financial Document Extractor",
+        "badge": "Entity Extraction",
+        "icon": "FIN",
     },
     {
         "id": "classify",
@@ -294,6 +299,7 @@ def index_chat_documents():
                     "text": c.text,
                     "text_hash": _text_hash(c.text),
                     "source": c.source,
+                    "page": c.page,
                 }
                 for c in source_chunks
             ])
@@ -362,6 +368,20 @@ def clear_history():
 CHAT_CONTEXT_WINDOW = 6
 
 
+def _context_block(chunk) -> str:
+    """Format a retrieved chunk as a context block, including its page if known."""
+    loc = f", page {chunk.page}" if getattr(chunk, "page", None) else ""
+    return f"Source: {chunk.source}{loc}, chunk {chunk.index}\n{chunk.text}"
+
+
+def _chunk_source(chunk) -> dict:
+    """Build the source citation dict sent to the UI (page included when known)."""
+    src = {"source": chunk.source, "chunk": chunk.index}
+    if getattr(chunk, "page", None):
+        src["page"] = chunk.page
+    return src
+
+
 @app.post("/api/chat/message")
 @require_role("admin", "staff")
 def chat_message():
@@ -382,17 +402,14 @@ def chat_message():
         save_chat_message(session_db_id, "user", question)
 
         relevant = retrieve_relevant_chunks_db(
-            question, session_db_id, k=3, document_ids=document_ids
+            question, session_db_id, k=8, document_ids=document_ids
         )
         if not relevant:
             answer = "I could not find relevant context in the uploaded documents."
             save_chat_message(session_db_id, "assistant", answer)
             return jsonify({"answer": answer, "sources": []})
 
-        context_blocks = [
-            f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
-            for chunk in relevant
-        ]
+        context_blocks = [_context_block(chunk) for chunk in relevant]
         system_p, user_p = build_rag_prompt(question, context_blocks)
 
         history = get_chat_history(session_db_id)
@@ -405,7 +422,7 @@ def chat_message():
         messages.append({"role": "user", "content": user_p})
 
         answer = generate_chat_completion(messages, system_prompt=system_p)
-        sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
+        sources = [_chunk_source(chunk) for chunk in relevant]
 
         save_chat_message(session_db_id, "assistant", answer, sources)
 
@@ -445,7 +462,7 @@ def chat_stream():
     try:
         save_chat_message(session_db_id, "user", question)
         relevant = retrieve_relevant_chunks_db(
-            question, session_db_id, k=3, document_ids=document_ids
+            question, session_db_id, k=8, document_ids=document_ids
         )
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
@@ -460,10 +477,7 @@ def chat_stream():
 
         return Response(stream_with_context(gen_empty()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
-    context_blocks = [
-        f"Source: {chunk.source}, chunk {chunk.index}\n{chunk.text}"
-        for chunk in relevant
-    ]
+    context_blocks = [_context_block(chunk) for chunk in relevant]
     system_p, user_p = build_rag_prompt(question, context_blocks)
 
     history = get_chat_history(session_db_id)
@@ -474,7 +488,7 @@ def chat_stream():
         messages.append({"role": role, "content": msg["content"]})
     messages.append({"role": "user", "content": user_p})
 
-    sources = [{"source": chunk.source, "chunk": chunk.index} for chunk in relevant]
+    sources = [_chunk_source(chunk) for chunk in relevant]
 
     def gen():
         parts = []
@@ -493,7 +507,7 @@ def chat_stream():
     return Response(stream_with_context(gen()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 
 
-# ── PII, OCR, Sentiment, Classifier routes ────────────────────────────────────
+# ── Financial Extractor, OCR, Classifier routes ───────────────────────────────
 
 @app.post("/api/pii/extract")
 @require_role("admin", "staff")
@@ -550,74 +564,6 @@ def ocr_extract():
         return jsonify({"error": str(exc)}), 503
     except Exception as exc:
         return jsonify({"error": f"OCR failed: {str(exc)}"}), 500
-
-
-SENTIMENT_CHAR_LIMIT = 3000
-
-
-@app.post("/api/sentiment/analyze")
-@require_role("admin", "staff")
-def sentiment_analyze():
-    """Analyze sentiment of text or documents."""
-    text = (request.form.get("text") or "").strip()
-    documents = request.files.getlist("documents")
-
-    if not text and not documents:
-        return jsonify({"error": "Provide text or upload documents"}), 400
-    if text and documents:
-        return jsonify({"error": "Provide either text or documents, not both."}), 400
-
-    try:
-        combined_text = ""
-        source = None
-
-        if documents:
-            chunks = load_documents(documents)
-            if chunks:
-                combined_text = " ".join(chunk.text for chunk in chunks)
-                source = "document"
-            else:
-                return jsonify({"error": "No readable text found. If scanned PDF, run OCR first."}), 400
-
-        if text:
-            combined_text = text
-            source = "text"
-
-        normalized_text = " ".join(combined_text.split())
-        original_length = len(normalized_text)
-        truncated = original_length > SENTIMENT_CHAR_LIMIT
-        normalized_text = normalized_text[:SENTIMENT_CHAR_LIMIT]
-
-        system_prompt = (
-            "You are a sentiment analysis assistant for legal document review. Analyze the sentiment of the given text. "
-            "Return ONLY a valid JSON object with these exact fields:\n"
-            "{\n"
-            "  \"sentiment\": \"Positive\" | \"Negative\" | \"Neutral\",\n"
-            "  \"confidence\": integer 0-100,\n"
-            "  \"tone\": single word descriptor,\n"
-            "  \"reasoning\": 1-2 sentence explanation\n"
-            "}\n"
-            "This is for legal eDiscovery context — flag hostile or adversarial tone especially."
-        )
-
-        response = generate_completion(normalized_text, system_prompt=system_prompt)
-        sentiment_data = parse_llm_json(response)
-        if not isinstance(sentiment_data, dict):
-            raise ValueError("LLM response must be a JSON object.")
-
-        result = {**sentiment_data, "source": source, "char_count": len(normalized_text)}
-        if truncated:
-            result["warning"] = f"Text truncated from {original_length} to {SENTIMENT_CHAR_LIMIT} chars."
-
-        session_db_id = _get_session_db_id()
-        save_sentiment_result(session_db_id, normalized_text, result)
-        return jsonify(result)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 503
-    except Exception as exc:
-        return jsonify({"error": f"Sentiment analysis failed: {str(exc)}"}), 500
 
 
 @app.post("/api/classify/documents")

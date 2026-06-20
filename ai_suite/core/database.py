@@ -145,14 +145,31 @@ def get_user_count() -> int:
 
 
 def ensure_admin_exists():
-    """Create default admin from env vars if no users exist."""
+    """Seed the initial admin from env vars if no users exist.
+
+    Refuses to create an account with a weak or missing ADMIN_PASSWORD so a
+    public deployment never ships with the guessable admin/admin default. For
+    local development, set ALLOW_INSECURE_ADMIN=1 to bypass the check.
+    """
     if get_user_count() > 0:
         return
     email = os.getenv("ADMIN_EMAIL", "admin@documind.local")
-    password = os.getenv("ADMIN_PASSWORD", "admin")
+    password = os.getenv("ADMIN_PASSWORD", "")
     name = os.getenv("ADMIN_NAME", "Admin")
+
+    allow_insecure = os.getenv("ALLOW_INSECURE_ADMIN", "").lower() in ("1", "true", "yes")
+    weak = (not password) or password.lower() == "admin" or len(password) < 8
+    if weak and not allow_insecure:
+        raise RuntimeError(
+            "Refusing to seed the initial admin with a weak/missing ADMIN_PASSWORD. "
+            "Set a strong ADMIN_PASSWORD (8+ chars, not 'admin') before first run, "
+            "or set ALLOW_INSECURE_ADMIN=1 for local development only."
+        )
+    if not password:
+        password = "admin"  # only reachable when ALLOW_INSECURE_ADMIN is set
+
     create_user(email, password, name, role="admin")
-    print(f"Default admin created: {email}")
+    print(f"Initial admin created: {email}")
 
 
 # ── Sessions ──────────────────────────────────────────────────────────────────
@@ -213,12 +230,12 @@ def insert_chunks(document_id: int, chunks_data: list[dict]):
     with get_connection() as conn:
         with conn.cursor() as cur:
             args = [
-                (document_id, c["chunk_index"], c["text"], c["text_hash"], c["source"])
+                (document_id, c["chunk_index"], c["text"], c["text_hash"], c["source"], c.get("page"))
                 for c in chunks_data
             ]
             cur.executemany(
-                "INSERT INTO chunks (document_id, chunk_index, text, text_hash, source) "
-                "VALUES (%s, %s, %s, %s, %s)",
+                "INSERT INTO chunks (document_id, chunk_index, text, text_hash, source, page) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 args
             )
 
@@ -250,7 +267,7 @@ def get_chunks_by_session(session_db_id: int, document_ids: list[int] | None = N
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if document_ids:
                 cur.execute(
-                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.embedding "
+                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.page, c.embedding "
                     "FROM chunks c "
                     "JOIN documents d ON c.document_id = d.id "
                     "WHERE d.session_id = %s AND d.tool = 'chat' AND d.id = ANY(%s) "
@@ -259,7 +276,7 @@ def get_chunks_by_session(session_db_id: int, document_ids: list[int] | None = N
                 )
             else:
                 cur.execute(
-                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.embedding "
+                    "SELECT c.id, c.chunk_index, c.text, c.text_hash, c.source, c.page, c.embedding "
                     "FROM chunks c "
                     "JOIN documents d ON c.document_id = d.id "
                     "WHERE d.session_id = %s AND d.tool = 'chat' "
