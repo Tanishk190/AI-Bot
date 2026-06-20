@@ -5,6 +5,7 @@ from functools import wraps
 import hashlib
 import json
 import os
+import re
 import uuid
 
 load_dotenv()
@@ -367,6 +368,10 @@ def clear_history():
 
 CHAT_CONTEXT_WINDOW = 6
 
+# Matches one or more adjacent bracket citations, e.g. "[1]" or "[2][3]".
+_BRACKET_CITATION_RE = re.compile(r"((?:\[\d+\])+)")
+_SINGLE_BRACKET_RE = re.compile(r"\[(\d+)\]")
+
 
 def _context_block(chunk) -> str:
     """Format a retrieved chunk as a context block, including its page if known."""
@@ -380,6 +385,39 @@ def _chunk_source(chunk) -> dict:
     if getattr(chunk, "page", None):
         src["page"] = chunk.page
     return src
+
+
+def _citation_text(chunk) -> str:
+    """Render a chunk's real metadata as the citation text shown inline in the answer."""
+    loc = f" | Page {chunk.page}" if getattr(chunk, "page", None) else ""
+    return f"(Source: {chunk.source}{loc} | Chunk #{chunk.index})"
+
+
+def resolve_citation_brackets(answer: str, relevant: list) -> str:
+    """Replace model-written [n] bracket markers with real citation text.
+
+    The LLM is prompted (see build_rag_prompt) to cite using only the small
+    bracket index handed to it for each context block — never to retype the
+    underlying page/chunk numbers itself. Here we substitute each bracket
+    group with the actual citation string built straight from the
+    corresponding Chunk object in `relevant`, so the inline citation can
+    never diverge from the real source metadata. Unknown or out-of-range
+    indices (e.g. a hallucinated [9] when only 8 blocks were provided) are
+    dropped rather than left in the text, since a wrong bracket number left
+    visible would be more confusing than no inline citation at all.
+    """
+    def _replace_group(match: "re.Match") -> str:
+        indices = _SINGLE_BRACKET_RE.findall(match.group(0))
+        seen = []
+        for idx_str in indices:
+            idx = int(idx_str)
+            if 1 <= idx <= len(relevant) and idx not in seen:
+                seen.append(idx)
+        if not seen:
+            return ""
+        return "".join(_citation_text(relevant[i - 1]) for i in seen)
+
+    return _BRACKET_CITATION_RE.sub(_replace_group, answer).strip()
 
 
 @app.post("/api/chat/message")
@@ -422,6 +460,7 @@ def chat_message():
         messages.append({"role": "user", "content": user_p})
 
         answer = generate_chat_completion(messages, system_prompt=system_p)
+        answer = resolve_citation_brackets(answer, relevant)
         sources = [_chunk_source(chunk) for chunk in relevant]
 
         save_chat_message(session_db_id, "assistant", answer, sources)
@@ -500,9 +539,12 @@ def chat_stream():
             yield _sse({"error": str(exc)})
             return
         answer = "".join(parts).strip()
-        if answer:
-            save_chat_message(session_db_id, "assistant", answer, sources)
-        yield _sse({"done": True, "sources": sources})
+        resolved = resolve_citation_brackets(answer, relevant) if answer else answer
+        if resolved:
+            save_chat_message(session_db_id, "assistant", resolved, sources)
+        # Tell the client the final, citation-resolved text so it can replace
+        # whatever raw [n] markers were rendered live during streaming.
+        yield _sse({"done": True, "sources": sources, "final_answer": resolved})
 
     return Response(stream_with_context(gen()), mimetype="text/event-stream", headers=_SSE_HEADERS)
 

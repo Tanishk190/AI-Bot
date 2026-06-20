@@ -280,7 +280,12 @@ function renderTables(text) {
       }
       const thead = header.map((h) => `<th>${h}</th>`).join("");
       const tbody = rows
-        .map((r) => `<tr>${header.map((_, c) => `<td>${r[c] || ""}</td>`).join("")}</tr>`)
+        .map((r) => `<tr>${header.map((_, c) => {
+          const cell = (r[c] != null ? String(r[c]).trim() : "");
+          // A blank cell under a populated header reads as a rendering glitch;
+          // show an em dash so ragged model output still aligns cleanly.
+          return `<td>${cell || "—"}</td>`;
+        }).join("")}</tr>`)
         .join("");
       out.push(`<table class="md-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`);
       continue;
@@ -568,6 +573,15 @@ if (chatForm) {
             chatHistory.scrollTop = chatHistory.scrollHeight;
           } else if (payload.done) {
             sources = payload.sources || [];
+            // The streamed deltas contain raw [n] citation markers. The server
+            // sends the citation-resolved text in final_answer — swap it in so
+            // the user sees real (Source: ... | Page ... | Chunk #...) citations
+            // instead of the bracket placeholders rendered live during streaming.
+            if (payload.final_answer) {
+              answer = payload.final_answer;
+              pendingBubble.innerHTML = renderMarkdown(answer);
+              chatHistory.scrollTop = chatHistory.scrollHeight;
+            }
           }
         }
       }

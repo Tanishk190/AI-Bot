@@ -139,6 +139,32 @@ def _normalize(values: list[float]) -> list[float]:
     return [(v - lo) / (hi - lo) for v in values]
 
 
+def _detect_page_intent(question: str) -> set[int] | None:
+    """Return the set of page numbers a query explicitly asks about, or None.
+
+    Catches phrasings like "page 5", "on page 12", "pages 3-4", "p. 7",
+    "page no. 9". When a user names a page, semantic/BM25 matching against the
+    literal phrase "page 5" is useless (it isn't similar to the page's actual
+    content), so we route these to a hard metadata filter instead. Returns None
+    when no explicit page reference is found, leaving normal hybrid retrieval
+    untouched.
+    """
+    pages: set[int] = set()
+    # Ranges first: "pages 3-4", "page 3 to 5"
+    for lo, hi in re.findall(r"\bpages?\s*(?:no\.?\s*)?(\d+)\s*(?:-|–|to)\s*(\d+)", question, re.I):
+        lo_i, hi_i = int(lo), int(hi)
+        if lo_i <= hi_i and hi_i - lo_i <= 50:  # guard against absurd ranges
+            pages.update(range(lo_i, hi_i + 1))
+    # Singles: full word "page 5"/"pages 5", or abbreviations "p. 7" / "pg 9".
+    # Abbreviations require a trailing period or are matched as a standalone
+    # token, so the bare "p" inside words like "top", "step", "group" is ignored.
+    for n in re.findall(r"\bpages?\s*(?:no\.?\s*)?(\d+)", question, re.I):
+        pages.add(int(n))
+    for n in re.findall(r"\b(?:p\.\s*|pg\.?\s*)(\d+)", question, re.I):
+        pages.add(int(n))
+    return pages or None
+
+
 def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 8,
                                 document_ids: list[int] | None = None,
                                 per_page_cap: int = 3,
@@ -148,10 +174,27 @@ def retrieve_relevant_chunks_db(question: str, session_db_id: int, k: int = 8,
     Combines normalized semantic similarity with a BM25 keyword score, then
     spreads the results across pages (``per_page_cap``) so multi-clause queries
     aren't dominated by a single dense page.
+
+    If the question explicitly names a page (e.g. "what's on page 5"), retrieval
+    is hard-filtered to that page (plus immediately adjacent pages, since clauses
+    span page breaks) before ranking — literal page queries don't match well on
+    content similarity alone.
     """
     chunk_rows = get_chunks_by_session(session_db_id, document_ids=document_ids)
     if not chunk_rows:
         return []
+
+    # Page-intent routing: restrict the candidate pool to requested pages (±1).
+    requested_pages = _detect_page_intent(question)
+    if requested_pages:
+        wanted = set(requested_pages)
+        for p in requested_pages:
+            wanted.update({p - 1, p + 1})  # adjacent pages catch boundary-spanning clauses
+        page_filtered = [r for r in chunk_rows if r.get("page") in wanted]
+        # Only narrow if the requested pages actually exist; otherwise fall back
+        # to the full pool so an out-of-range page number degrades gracefully.
+        if page_filtered:
+            chunk_rows = page_filtered
 
     keyword = _normalize(_keyword_scores(question, chunk_rows))
     semantic = _semantic_scores(question, chunk_rows)
@@ -506,6 +549,62 @@ def _extract_text(file_storage, filename: str) -> str:
     return ""
 
 
+def _table_to_text(table: list[list]) -> str:
+    """Render an extracted table so column structure survives chunking.
+
+    A flat tab/space join destroys the row↔column association — once chunked,
+    the LLM sees a wall of numbers and can't tell which value sits under which
+    header, which is exactly why broad questions over wide tables (e.g. "how
+    much TDS was not deposited?") miss a single populated cell.
+
+    We emit BOTH representations:
+      1. A markdown table (pipe-delimited) so the visual grid is preserved.
+      2. One self-describing line per data row that pairs every header with its
+         cell value ("Section: 194I | TDS not deposited: 24,000 | ..."). Even
+         if a row is split from the header during chunking, each cell still
+         carries its own column label, so broad queries can't lose the link.
+    """
+    # Normalize: strip cells, collapse internal newlines.
+    norm = []
+    for row in table:
+        if row is None:
+            continue
+        cells = [(c or "").strip().replace("\n", " ") for c in row]
+        if any(cells):  # skip fully-empty rows
+            norm.append(cells)
+    if not norm:
+        return ""
+
+    width = max(len(r) for r in norm)
+    norm = [r + [""] * (width - len(r)) for r in norm]  # pad ragged rows
+
+    header = norm[0]
+    body = norm[1:]
+
+    # 1. Markdown grid
+    md_lines = ["| " + " | ".join(header) + " |",
+                "| " + " | ".join(["---"] * width) + " |"]
+    for r in body:
+        md_lines.append("| " + " | ".join(r) + " |")
+    markdown = "\n".join(md_lines)
+
+    # 2. Self-describing row lines (only when we have real headers to pair with)
+    row_lines = []
+    has_headers = any(h.strip() for h in header)
+    if has_headers and body:
+        for r in body:
+            pairs = [f"{header[c].strip()}: {r[c].strip()}"
+                     for c in range(width)
+                     if header[c].strip() and r[c].strip()]
+            if pairs:
+                row_lines.append("Row — " + " | ".join(pairs))
+
+    parts = [markdown]
+    if row_lines:
+        parts.append("\n".join(row_lines))
+    return "\n\n".join(parts)
+
+
 def _extract_pdf_pages(file_storage) -> list[tuple[int, str]]:
     """Extract text per page as (page_number, text), tables included.
 
@@ -524,12 +623,9 @@ def _extract_pdf_pages(file_storage) -> list[tuple[int, str]]:
                 page_text = page.extract_text(x_tolerance=1, y_tolerance=1) or ""
                 table_blocks = []
                 for table in (page.extract_tables() or []):
-                    rows = []
-                    for row in table:
-                        cells = [(cell or "").strip().replace("\n", " ") for cell in row]
-                        rows.append("\t".join(cells).strip())
-                    if rows:
-                        table_blocks.append("\n".join(rows))
+                    block = _table_to_text(table)
+                    if block:
+                        table_blocks.append(block)
                 if table_blocks:
                     table_text = "\n\n".join(table_blocks)
                     page_text = f"{page_text}\n\n{table_text}".strip() if page_text else table_text
@@ -594,12 +690,9 @@ def _extract_pdf(file_storage) -> str:
                 tables = page.extract_tables() or []
                 table_blocks = []
                 for table in tables:
-                    rows = []
-                    for row in table:
-                        cells = [(cell or "").strip().replace("\n", " ") for cell in row]
-                        rows.append("\t".join(cells).strip())
-                    if rows:
-                        table_blocks.append("\n".join(rows))
+                    block = _table_to_text(table)
+                    if block:
+                        table_blocks.append(block)
                 if table_blocks:
                     table_text = "\n\n".join(table_blocks)
                     page_text = f"{page_text}\n\n{table_text}".strip() if page_text else table_text
@@ -660,13 +753,12 @@ def _extract_docx(file_storage) -> str:
         doc = Document(file_storage)
         parts = [para.text for para in doc.paragraphs if para.text.strip()]
         for table in doc.tables:
-            rows = []
+            grid = []
             for row in table.rows:
-                cells = [cell.text.strip().replace("\n", " ") for cell in row.cells]
-                rows.append("\t".join(cells).strip())
-            if rows:
-                parts.append("TABLE:")
-                parts.extend(rows)
+                grid.append([cell.text for cell in row.cells])
+            block = _table_to_text(grid)
+            if block:
+                parts.append(block)
         return "\n".join([p for p in parts if p.strip()])
     except ImportError:
         return "[DOCX extraction requires python-docx]"
