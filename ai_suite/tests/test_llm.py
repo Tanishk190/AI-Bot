@@ -28,7 +28,6 @@ def test_invalid_json_raises_valueerror():
         parse_llm_json("this is not json at all")
 
 
-@pytest.mark.xfail(reason="Known limitation: a bare ``` fence (no 'json' tag) is not stripped", strict=True)
 def test_bare_fence_block():
-    # Documents current behavior — a bare ``` fence currently raises instead of parsing.
+    # A bare ``` fence (no 'json' tag) is now stripped correctly.
     assert parse_llm_json('```\n{"a": 1}\n```') == {"a": 1}

@@ -149,22 +149,16 @@ def parse_llm_json(response: str) -> dict:
     Returns:
         Parsed JSON dict
     """
-    if response.strip().startswith("```"):
-        lines = response.split("\n")
-        json_lines = []
-        in_json = False
-        for line in lines:
-            if line.strip().startswith("```json"):
-                in_json = True
-                continue
-            if line.strip().startswith("```"):
-                in_json = False
-                continue
-            if in_json or (json_lines and not line.strip().startswith("```")):
-                json_lines.append(line)
-        response = "\n".join(json_lines)
+    text = response.strip()
+    if text.startswith("```"):
+        # Strip the opening fence line (``` or ```json) and the closing fence.
+        lines = text.split("\n")
+        lines = lines[1:]  # drop opening fence
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]  # drop closing fence
+        text = "\n".join(lines)
 
     try:
-        return json.loads(response.strip())
+        return json.loads(text.strip())
     except json.JSONDecodeError as exc:
         raise ValueError(f"Failed to parse LLM response as JSON: {str(exc)}") from exc
