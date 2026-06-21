@@ -34,5 +34,8 @@ Thumbs.db
 *~
 .env
 
+# Local-only dev tools
+ai_suite/db_peek.py
+
 # Claude Code
 CLAUDE.md
